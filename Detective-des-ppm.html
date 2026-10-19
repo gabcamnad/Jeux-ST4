@@ -1,0 +1,640 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Détective des ppm</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@500;700&family=Atkinson+Hyperlegible:wght@400;700&family=JetBrains+Mono:wght@500;700&display=swap">
+<style>
+/* Layout: arcade cabinet (same family as Odyssée ST 4) with a lab-bench console; hub of 3 missions + memo, each mission swaps into the console. Single dark look by choice. */
+:root{
+  color-scheme: dark;
+  --cab:#12161f; --cab2:#1b2230; --panel:#212a3a; --line:#34425a;
+  --ink:#eef3f1; --dim:#9fb0b8;
+  --teal:#5ee6c8; --gold:#ffc93c; --hit:#ff5d6c; --ok:#5ee6a0; --violet:#b48cff;
+  --f-display:"Pixelify Sans","Courier New",monospace;
+  --f-body:"Atkinson Hyperlegible","Segoe UI",system-ui,sans-serif;
+  --f-num:"JetBrains Mono",ui-monospace,Menlo,monospace;
+}
+[hidden]{display:none!important}
+html,body{background:var(--cab);color:var(--ink)}
+body{font-family:var(--f-body);font-size:15px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:16px 28px}
+.wrap{max-width:1040px;margin:0 auto;display:flex;flex-direction:column;gap:14px}
+header{display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap}
+h1{font-family:var(--f-display);font-size:clamp(24px,4vw,36px);margin:0;text-wrap:balance}
+h1 span{color:var(--teal)}
+.tot{font-family:var(--f-display);color:var(--gold);font-size:17px}
+.console{background:var(--cab2);border:3px solid var(--line);border-radius:8px;padding:clamp(14px,2.5vw,26px);box-shadow:0 18px 50px #0008;min-height:440px;display:flex;flex-direction:column;gap:16px}
+button{font-family:var(--f-display);cursor:pointer}
+button:focus-visible,input:focus-visible{outline:3px solid var(--gold);outline-offset:2px}
+.btn{background:var(--panel);color:var(--ink);border:2px solid var(--line);border-radius:5px;padding:8px 14px;font-size:15px;font-weight:700;box-shadow:0 3px 0 #0009}
+.btn:hover{border-color:var(--teal)}
+.btn:active{transform:translateY(2px);box-shadow:none}
+.btn.go{background:var(--teal);color:#06231d;border-color:#2aa88d}
+.btn[disabled]{opacity:.45;cursor:default}
+
+/* Hub */
+.intro{margin:0;color:var(--dim);max-width:66ch;line-height:1.45}
+.hub{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.mission.hero{grid-column:1/-1;flex-direction:row;align-items:center;gap:16px}
+.mission.hero canvas{width:140px;height:auto;aspect-ratio:4/3;flex:none;border-radius:4px;image-rendering:pixelated}
+.mission.hero .txt{display:flex;flex-direction:column;gap:6px;min-width:0}
+.mission{background:var(--panel);border:2px solid var(--line);border-top:6px solid var(--c);border-radius:7px;padding:14px;color:var(--ink);text-align:left;display:flex;flex-direction:column;gap:8px;min-width:0;transition:transform .12s}
+.mission:hover,.mission:focus-visible{transform:translateY(-3px);border-color:var(--c)}
+.mission .k{font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--c)}
+.mission .n{font-size:20px}
+.mission .d{font-family:var(--f-body);font-size:13.5px;line-height:1.4;color:var(--dim);font-weight:400}
+.mission .s{font-size:18px;letter-spacing:.12em;color:var(--gold);margin-top:auto}
+.memo{background:#0e131b;border:2px dashed var(--line);border-radius:7px;padding:14px 16px;display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px 22px}
+.memo h2{grid-column:1/-1;margin:0;font-family:var(--f-display);font-size:17px;color:var(--teal)}
+.memo p{margin:0;font-size:14px;line-height:1.6;min-width:0}
+.memo .f{white-space:normal}
+.f{font-family:var(--f-num);background:#ffffff10;padding:1px 6px;border-radius:3px;white-space:nowrap;font-size:.95em}
+
+/* Mission chrome */
+.bar{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.bar h2{margin:0;font-family:var(--f-display);font-size:clamp(18px,2.6vw,24px);color:var(--c)}
+.pills{display:flex;gap:8px;flex-wrap:wrap}
+.pill{font-family:var(--f-display);font-size:14px;background:var(--panel);border:2px solid var(--line);border-radius:999px;padding:3px 11px;font-variant-numeric:tabular-nums}
+.task{font-size:clamp(15px,2vw,19px);line-height:1.4;margin:0;font-weight:700;max-width:60ch}
+.feedback{border-left:4px solid var(--ok);background:#0004;padding:8px 12px;line-height:1.45;font-size:14.5px;border-radius:0 4px 4px 0}
+.feedback.bad{border-left-color:var(--hit)}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+
+/* Mission 1 */
+.bench{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.2fr);gap:18px;align-items:center}
+.bench canvas{width:100%;max-width:340px;aspect-ratio:4/5;justify-self:center}
+.readout{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;font-size:15px;align-items:baseline}
+.readout b{font-family:var(--f-num);font-size:clamp(18px,2.6vw,26px);color:var(--teal);font-variant-numeric:tabular-nums}
+.pad{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
+.pad button{font-family:var(--f-num);font-size:14px;padding:8px 2px;background:var(--panel);color:var(--ink);border:2px solid var(--line);border-radius:5px}
+.pad button.p{color:var(--ok)} .pad button.m{color:var(--hit)}
+.pad button:hover{border-color:var(--ink)}
+
+/* Mission 2 */
+.turbo{display:flex;flex-direction:column;gap:14px;align-items:stretch}
+.timer{height:10px;background:#0006;border-radius:5px;overflow:hidden}
+.timer i{display:block;height:100%;background:var(--gold);width:100%;transition:width .2s linear}
+.big{font-family:var(--f-num);font-size:clamp(20px,3.4vw,32px);text-align:center;margin:8px 0;line-height:1.3}
+.choices{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.choice{font-family:var(--f-num);font-size:clamp(16px,2.2vw,21px);background:var(--panel);color:var(--ink);border:2px solid var(--line);border-radius:7px;padding:14px 10px;font-weight:700}
+.choice b{font-family:var(--f-display);color:var(--gold);margin-right:8px;font-size:.8em}
+.choice:hover{border-color:var(--gold)}
+.choice.right{border-color:var(--ok);background:#173b2c} .choice.wrong{border-color:var(--hit);background:#4a1b26}
+.combo{font-family:var(--f-display);color:var(--gold);text-align:center;min-height:22px}
+
+/* Mission 3 */
+.river{width:100%;overflow-x:auto}
+.river svg{display:block;width:100%;min-width:620px;height:auto}
+.samples{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.sample{background:var(--panel);border:2px solid var(--line);border-radius:7px;padding:10px;display:flex;flex-direction:column;gap:6px;min-width:0}
+.sample.on{border-color:var(--violet)}
+.sample.done{border-color:var(--ok)} .sample.miss{border-color:var(--hit);border-style:dashed}
+.sample h3{margin:0;font-family:var(--f-display);font-size:17px;color:var(--violet)}
+.sample p{margin:0;font-size:13.5px;line-height:1.35}
+.sample .res{font-family:var(--f-num);font-weight:700;font-size:17px}
+.ansrow{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.ansrow input{font-family:var(--f-num);font-size:18px;width:9ch;background:#0b0f16;color:var(--ink);border:2px solid var(--line);border-radius:5px;padding:6px 8px}
+.ansrow label{font-weight:700}
+.opts{display:flex;flex-direction:column;gap:8px}
+.opts button{font-family:var(--f-body);font-size:15px;text-align:left;background:var(--panel);color:var(--ink);border:2px solid var(--line);border-radius:6px;padding:10px 12px}
+.opts button:hover{border-color:var(--violet)}
+.opts button.right{border-color:var(--ok);background:#173b2c} .opts button.wrong{border-color:var(--hit);background:#4a1b26}
+.end{align-items:center;text-align:center;justify-content:center}
+.end h2{font-family:var(--f-display);font-size:clamp(26px,5vw,44px);margin:0;color:var(--c)}
+.end .st{font-size:34px;color:var(--gold);letter-spacing:.15em}
+
+
+/* Mission action */
+.arena{position:relative;width:100%;aspect-ratio:16/9;max-width:100%;border-radius:6px;overflow:hidden;box-shadow:0 0 0 3px var(--line)}
+.arena canvas{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none;cursor:crosshair}
+.aov{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:#0b0f16b3;padding:3%}
+.acard{background:var(--panel);border:3px solid var(--c);border-radius:8px;padding:clamp(12px,2.4vw,22px);width:min(620px,100%);max-height:100%;overflow:auto;display:flex;flex-direction:column;gap:10px;text-align:center}
+.acard h3{margin:0;font-family:var(--f-display);font-size:clamp(18px,2.8vw,26px);color:var(--c)}
+.acard p{margin:0;line-height:1.45;font-size:clamp(13px,1.7vw,15.5px)}
+.acard .tip{color:var(--gold);font-family:var(--f-num);font-size:clamp(12px,1.5vw,14px)}
+.acard .btn{align-self:center}
+.rec{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:5px;text-align:left}
+.rec li{display:flex;justify-content:space-between;gap:10px;background:#0006;border-left:4px solid var(--ok);padding:5px 10px;font-size:clamp(12px,1.5vw,14px);border-radius:0 4px 4px 0}
+.rec li span{font-family:var(--f-num);min-width:0}
+.rec li b{color:var(--ok);white-space:nowrap} .rec li.bad{border-left-color:var(--hit)} .rec li.bad b{color:var(--hit)}
+.tpad{display:none;justify-content:space-between;gap:10px;user-select:none;-webkit-user-select:none;touch-action:none}
+.tpad .g{display:flex;gap:8px}
+.tpad button{width:58px;height:54px;font-size:20px;background:var(--panel);color:var(--ink);border:2px solid var(--line);border-radius:10px}
+.tpad button.fire{width:96px;background:#ff7a59;color:#2a0d05;border-color:#c4502f}
+.tpad button.on{filter:brightness(1.4)}
+@media (pointer:coarse){ .tpad{display:flex} }
+.help{color:var(--dim);font-size:13px;display:flex;gap:16px;flex-wrap:wrap;margin:0}
+.help kbd{font-family:var(--f-num);background:var(--panel);border:1px solid var(--line);border-bottom-width:3px;border-radius:3px;padding:0 5px;color:var(--ink)}
+@media (max-width:720px){ .mission.hero{flex-direction:column;align-items:flex-start} }
+@media (max-width:720px){
+  .hub{grid-template-columns:1fr}
+  .bench{grid-template-columns:1fr}
+  .bench canvas{max-width:220px}
+  .samples{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .choices{grid-template-columns:1fr}
+}
+@media (prefers-reduced-motion:reduce){ .mission{transition:none} .timer i{transition:none} }
+</style>
+<style>:root{padding:env(safe-area-inset-top,0) 0 env(safe-area-inset-bottom,0)}body{margin:0;font-family:system-ui,sans-serif}img{max-width:100%}[hidden]{display:none!important}</style>
+</head>
+<body>
+
+
+<div class="wrap">
+  <header>
+    <h1>Détective des <span>ppm</span></h1>
+    <div class="tot" id="tot" aria-live="polite"></div>
+  </header>
+  <main class="console" id="console" aria-live="polite"></main>
+</div>
+<script>
+// ===== utilitaires =====
+const $ = s => document.querySelector(s);
+const C = $("#console");
+const pick = a => a[Math.floor(Math.random()*a.length)];
+const shuffle = a => { a = a.slice(); for (let i=a.length-1;i>0;i--){ const j = Math.floor(Math.random()*(i+1)); [a[i],a[j]] = [a[j],a[i]]; } return a; };
+const clean = n => Number(Number(n).toPrecision(10));
+const fmt = n => clean(n).toLocaleString("fr-CA", {maximumFractionDigits:6});
+const vol = L => L < 1 ? `${fmt(L*1000)} mL` : `${fmt(L)} L`;
+const parseNum = s => parseFloat(String(s).replace(/\s| | /g,"").replace(",", "."));
+let SAVE = {stars:{}};
+try { const s = JSON.parse(localStorage.getItem("detective-ppm") || "null"); if (s) SAVE = s; } catch(e){}
+const persist = () => { try { localStorage.setItem("detective-ppm", JSON.stringify(SAVE)); } catch(e){} };
+const stars = n => "★".repeat(n) + "☆".repeat(3-n);
+
+// ===== son =====
+let ac = null;
+function beep(kind){
+  try { ac = ac || new (window.AudioContext || window.webkitAudioContext)(); if (ac.state === "suspended") ac.resume(); } catch(e){ return; }
+  const seq = {good:[[660,.08],[880,.08],[1175,.14]], bad:[[260,.16],[180,.24]], tick:[[1400,.03]], drop:[[900,.05],[600,.07]], win:[[523,.1],[659,.1],[784,.1],[1047,.25]]}[kind] || [];
+  let t = ac.currentTime;
+  seq.forEach(([f,d]) => { const o = ac.createOscillator(), v = ac.createGain(); o.type = kind==="bad" ? "sawtooth" : "square"; o.frequency.value = f; v.gain.setValueAtTime(.12, t); v.gain.exponentialRampToValueAtTime(.0008, t+d); o.connect(v); v.connect(ac.destination); o.start(t); o.stop(t+d+.02); t += d*0.9; });
+}
+
+const MISSIONS = [
+  {id:"m4", c:"#ff7a59", k:"Mission action", n:"Patrouille du bassin", d:"Dirige ton personnage dans le bassin de traitement et neutralise les contaminants au-dessus de la norme. Attention aux fausses alertes !", run:mission4},
+  {id:"m1", c:"#5ee6c8", k:"Mission 1", n:"Le compte-gouttes", d:"Prépare 5 solutions à la concentration demandée en ajoutant la bonne masse de soluté. Ppm, g/L et %.", run:mission1},
+  {id:"m2", c:"#ffc93c", k:"Mission 2", n:"Convertisseur turbo", d:"75 secondes pour enchaîner les conversions : mg/L, g/L, %, mg/kg… Les séries de bonnes réponses multiplient tes points.", run:mission2},
+  {id:"m3", c:"#b48cff", k:"Mission 3", n:"Enquête à la rivière", d:"Analyse 4 échantillons de la rivière aux Castors, compare à la norme et trouve la source de la contamination. Le scénario change à chaque partie.", run:mission3}
+];
+const MEMO = `<section class="memo" aria-label="Aide-mémoire">
+  <h2>Aide-mémoire</h2>
+  <p><b>Concentration</b> : <span class="f">C = m ÷ V</span><br>m : masse de soluté · V : volume de solution</p>
+  <p><b>ppm</b> = parties par million.<br>Dans l'eau : <span class="f">1 ppm = 1 mg/L</span><br>Dans un solide : <span class="f">1 ppm = 1 mg/kg</span></p>
+  <p><span class="f">1 g/L = 1000 mg/L = 1000 ppm</span><br><span class="f">1 % = 1 g/100 mL = 10 000 ppm</span></p>
+  <p><b>Pour imaginer 1 ppm</b> : environ une goutte (0,05 mL) dans 50 L d'eau, ou 1 seconde dans 11,6 jours.</p>
+</section>`;
+
+function setTotal(){ const n = Object.values(SAVE.stars).reduce((a,b)=>a+b,0); $("#tot").textContent = `★ ${n} / ${MISSIONS.length*3}`; }
+function hub(){
+  setTotal();
+  C.style.removeProperty("--c");
+  C.innerHTML = `<p class="intro">Tu es technicien·ne au laboratoire d'analyse de l'eau. Les contaminants se mesurent souvent en traces : quelques milligrammes par litre. C'est là que les <b>ppm</b> deviennent ton meilleur outil.</p>
+  <div class="hub">${MISSIONS.map(m => { const inner = `<span class="k">${m.k}</span><span class="n">${m.n}</span><span class="d">${m.d}</span><span class="s" aria-label="${SAVE.stars[m.id]||0} étoiles sur 3">${stars(SAVE.stars[m.id]||0)}</span>`;
+    return m.id === "m4" ? `<button type="button" class="mission hero" data-id="${m.id}" style="--c:${m.c}"><canvas id="heroPrev" width="96" height="72"></canvas><span class="txt">${inner}</span></button>` : `<button type="button" class="mission" data-id="${m.id}" style="--c:${m.c}">${inner}</button>`; }).join("")}</div>${MEMO}`;
+  if (typeof drawHeroPreview === "function") drawHeroPreview($("#heroPrev"));
+  C.querySelectorAll(".mission").forEach(b => b.addEventListener("click", () => { const m = MISSIONS.find(x => x.id === b.dataset.id); C.style.setProperty("--c", m.c); m.run(m); }));
+}
+function chrome(m, pills){ return `<div class="bar"><h2>${m.n}</h2><div class="pills">${pills}<button type="button" class="btn" id="back">← Missions</button></div></div>`; }
+function bindBack(cleanup){ $("#back").addEventListener("click", () => { cleanup && cleanup(); hub(); }); }
+function finish(m, n, text){
+  SAVE.stars[m.id] = Math.max(SAVE.stars[m.id]||0, n); persist(); beep("win");
+  C.innerHTML = `<div class="console end" style="border:0;box-shadow:none;padding:0;min-height:380px;background:none"><h2>${m.n} : terminé</h2><div class="st" aria-label="${n} étoiles sur 3">${stars(n)}</div><p class="intro" style="text-align:center">${text}</p><div class="row" style="justify-content:center"><button type="button" class="btn go" id="again">Rejouer</button><button type="button" class="btn" id="home">Toutes les missions</button></div></div>`;
+  $("#again").addEventListener("click", () => m.run(m)); $("#home").addEventListener("click", hub);
+  setTotal();
+}
+
+// ===== MISSION 1 : le compte-gouttes =====
+function mission1(m){
+  const ok01 = (p, V) => Math.abs(p*V*10 - Math.round(p*V*10)) < 1e-9 && p*V <= 999;
+  const GEN = {
+    ppm: () => { let V, p; do { V = pick([0.1,0.2,0.25,0.5,1,1.5,2,4]); p = pick([2,3,4,5,6,8,10,12,15,16,20,24,25,30,40,50]); } while (!ok01(p,V)); return {V, ppm:p, ask:`${fmt(p)} ppm`, conv:""}; },
+    mgL: () => { let V, p; do { V = pick([0.2,0.25,0.5,1,2,3]); p = pick([3,4,6,8,10,14,15,18,20,35]); } while (!ok01(p,V)); return {V, ppm:p, ask:`${fmt(p)} mg/L`, conv:`Dans l'eau, ${fmt(p)} mg/L = ${fmt(p)} ppm. `}; },
+    gL:  () => { let V, gl; do { V = pick([0.25,0.5,1,2]); gl = pick([0.02,0.04,0.05,0.1,0.15,0.2,0.3,0.4]); } while (!ok01(gl*1000,V)); return {V, ppm:clean(gl*1000), ask:`${fmt(gl)} g/L`, conv:`${fmt(gl)} g/L = ${fmt(gl*1000)} mg/L = ${fmt(gl*1000)} ppm. `}; },
+    pct: () => { let V, pc; do { V = pick([0.05,0.1,0.2,0.25,0.5]); pc = pick([0.001,0.002,0.005,0.01,0.02,0.04,0.05]); } while (!ok01(pc*10000,V)); return {V, ppm:clean(pc*10000), ask:`${fmt(pc)} %`, conv:`${fmt(pc)} % = ${fmt(pc*10000)} ppm = ${fmt(pc*10000)} mg/L. `}; }
+  };
+  const rounds = [GEN.ppm(), pick([GEN.ppm, GEN.mgL])(), ...shuffle([GEN.mgL, GEN.gL, GEN.pct]).map(f => f())];
+  const SOL = shuffle(["sel de mer","sulfate de cuivre","colorant alimentaire","nitrate de potassium","sucre","chlorure de calcium","bicarbonate de sodium","sulfate de magnésium"]);
+  let r = 0, ok = 0, tenths = 0, locked = false, anim = 0, raf = 0;
+  function render(){
+    const R = rounds[r]; tenths = 0; locked = false;
+    C.innerHTML = chrome(m, `<span class="pill">Solution ${r+1}/5</span><span class="pill">Réussies : ${ok}</span>`) +
+      `<p class="task">Prépare ${vol(R.V)} d'une solution de ${SOL[r]} à <span style="color:var(--c)">${R.ask}</span>. Quelle masse de soluté dois-tu ajouter ?</p>
+      <div class="bench"><canvas id="bk" width="320" height="400" aria-label="Bécher"></canvas>
+        <div style="display:flex;flex-direction:column;gap:12px;min-width:0">
+          <div class="readout"><span>Volume de solution</span><b>${vol(R.V)}</b><span>Masse ajoutée</span><b id="mass">0 mg</b></div>
+          <div class="pad">${[100,10,1,0.1].map(s => `<button type="button" class="p" data-s="${s}">+${fmt(s)} mg</button>`).join("")}${[100,10,1,0.1].map(s => `<button type="button" class="m" data-s="${-s}">−${fmt(s)} mg</button>`).join("")}</div>
+          <div class="row"><button type="button" class="btn go" id="ok">Mélanger et mesurer</button><button type="button" class="btn" id="zero">Vider</button></div>
+          <div id="fb"></div>
+        </div></div>`;
+    bindBack(() => cancelAnimationFrame(raf));
+    C.querySelectorAll(".pad button").forEach(b => b.addEventListener("click", () => { if (locked) return; tenths = Math.max(0, tenths + Math.round(+b.dataset.s*10)); $("#mass").textContent = fmt(tenths/10) + " mg"; anim = 1; beep("drop"); }));
+    $("#zero").addEventListener("click", () => { if (locked) return; tenths = 0; $("#mass").textContent = "0 mg"; });
+    $("#ok").addEventListener("click", check);
+    cancelAnimationFrame(raf); draw();
+  }
+  function draw(){
+    const cv = $("#bk"); if (!cv) return; const x = cv.getContext("2d"), R = rounds[r];
+    x.clearRect(0,0,320,400);
+    const shown = locked ? (tenths/10)/R.V : 0;
+    const level = 120;
+    // liquide : la couleur ne fonce qu'après la mesure
+    const tone = locked ? Math.min(1, Math.log10(shown + 1)/3 + 0.12) : 0.12 + Math.min(0.5, Math.log10(tenths/10 + 1)/6);
+    x.fillStyle = `rgba(94,230,200,${tone})`;
+    x.beginPath(); x.moveTo(62, level); x.lineTo(258, level); x.lineTo(258, 360); x.quadraticCurveTo(258,372,246,372); x.lineTo(74,372); x.quadraticCurveTo(62,372,62,360); x.closePath(); x.fill();
+    x.strokeStyle = "#eef3f1"; x.lineWidth = 4; x.beginPath(); x.moveTo(40, 52); x.lineTo(58, 60); x.lineTo(58, 362); x.quadraticCurveTo(58,376,74,376); x.lineTo(246,376); x.quadraticCurveTo(262,376,262,362); x.lineTo(262, 52); x.stroke();
+    x.fillStyle = "#eef3f1"; x.font = `500 13px "JetBrains Mono", monospace`; x.textAlign = "left";
+    for (let i=1;i<=5;i++){ const y = 372 - i*48; x.fillRect(240, y, 18, 2); }
+    x.fillText(vol(R.V), 120, level - 10);
+    if (anim > 0){ anim -= 0.06; x.fillStyle = "#5ee6c8"; x.beginPath(); x.arc(160, 40 + (1-anim)*80, 7, 0, 7); x.fill(); }
+    if (locked){ x.fillStyle = "#0b0f16cc"; x.fillRect(86, 220, 148, 56); x.fillStyle = "#ffc93c"; x.font = `700 20px "JetBrains Mono", monospace`; x.textAlign = "center"; x.fillText(`${fmt(shown)} ppm`, 160, 256); }
+    raf = requestAnimationFrame(draw);
+  }
+  function check(){
+    if (locked){ r++; if (r >= rounds.length){ cancelAnimationFrame(raf); finish(m, ok === 5 ? 3 : ok >= 3 ? 2 : 1, `${ok} solution(s) sur 5 préparées exactement. Retiens : m = C × V, avec C en mg/L (ppm) et V en litres.`); } else render(); return; }
+    const R = rounds[r], need = clean(R.ppm * R.V), got = tenths/10;
+    if (got === 0){ $("#fb").innerHTML = `<div class="feedback bad">Ajoute d'abord du soluté avec les boutons +.</div>`; return; }
+    locked = true;
+    const good = Math.abs(got - need) < 1e-9;
+    if (good){ ok++; beep("good"); } else beep("bad");
+    $("#fb").innerHTML = `<div class="feedback ${good?"":"bad"}"><b>${good ? "Parfait !" : `Il fallait ${fmt(need)} mg.`}</b> ${R.conv}m = C × V = ${fmt(R.ppm)} mg/L × ${fmt(R.V)} L = <b>${fmt(need)} mg</b>.${good ? "" : ` Avec ${fmt(got)} mg, ta solution est à ${fmt(got/R.V)} ppm.`}</div>`;
+    $("#ok").textContent = r === 4 ? "Voir le résultat" : "Solution suivante ▸";
+    $("#ok").focus({preventScroll:true});
+  }
+  render();
+}
+
+// ===== MISSION 2 : convertisseur turbo =====
+function genQ(){
+  const T = [
+    () => { const x = pick([0.5,2,7.5,12,40,0.08]); return {q:`${fmt(x)} mg/L = ? ppm`, a:x, u:"ppm", w:[x*1000, x/1000, x*10], e:`Dans l'eau, 1 mg/L = 1 ppm : ${fmt(x)} mg/L = ${fmt(x)} ppm.`}; },
+    () => { const x = pick([0.002,0.015,0.2,1.5,0.05,0.008]); return {q:`${fmt(x)} g/L = ? ppm`, a:x*1000, u:"ppm", w:[x*100, x*10000, x*1e6], e:`1 g/L = 1000 ppm, donc ${fmt(x)} g/L × 1000 = ${fmt(x*1000)} ppm.`}; },
+    () => { const x = pick([250,40,3000,8,600]); return {q:`${fmt(x)} ppm = ? g/L`, a:x/1000, u:"g/L", w:[x/100, x/10000, x*1000], e:`On divise par 1000 : ${fmt(x)} ppm = ${fmt(x)} mg/L = ${fmt(x/1000)} g/L.`}; },
+    () => { const x = pick([0.1,0.002,1,0.05,2.5,0.4]); return {q:`${fmt(x)} % = ? ppm`, a:x*10000, u:"ppm", w:[x*1000, x*100, x*100000], e:`1 % = 10 000 ppm, donc ${fmt(x)} % × 10 000 = ${fmt(x*10000)} ppm.`}; },
+    () => { const x = pick([5000,200,30000,50,1500]); return {q:`${fmt(x)} ppm = ? %`, a:x/10000, u:"%", w:[x/1000, x/100, x/100000], e:`On divise par 10 000 : ${fmt(x)} ppm = ${fmt(x/10000)} %.`}; },
+    () => { const [mg, mL] = pick([[1,200],[3,500],[0.6,200],[2.5,250],[0.4,100],[9,500]]); const a = mg/(mL/1000); return {q:`${fmt(mg)} mg de soluté dans ${fmt(mL)} mL de solution = ? ppm`, a, u:"ppm", w:[mg*mL/1000, a*1000, mg/mL], e:`${fmt(mL)} mL = ${fmt(mL/1000)} L. C = ${fmt(mg)} mg ÷ ${fmt(mL/1000)} L = ${fmt(a)} mg/L = ${fmt(a)} ppm.`}; },
+    () => { const [g, L] = pick([[0.02,4],[0.006,2],[0.15,5],[0.009,3],[0.5,10]]); const a = g*1000/L; return {q:`${fmt(g)} g de soluté dans ${fmt(L)} L = ? ppm`, a, u:"ppm", w:[a*1000, a/1000, g*L], e:`${fmt(g)} g = ${fmt(g*1000)} mg. C = ${fmt(g*1000)} mg ÷ ${fmt(L)} L = ${fmt(a)} ppm.`}; },
+    () => { const [p, L] = pick([[15,2],[4,0.5],[0.5,3],[25,0.2],[8,1.5]]); const a = p*L; return {q:`Masse de soluté dans ${vol(L)} d'une solution à ${fmt(p)} ppm ?`, a, u:"mg", w:[a*1000, a/10, a*10], e:`m = C × V = ${fmt(p)} mg/L × ${fmt(L)} L = ${fmt(a)} mg.`}; },
+    () => { const [mg, kg] = pick([[4,2],[12,3],[0.8,0.4],[30,5],[1.5,0.5]]); const a = mg/kg; return {q:`${fmt(mg)} mg de plomb dans ${fmt(kg)} kg de sol = ? ppm`, a, u:"ppm", w:[a*1000, mg*kg, a/1000], e:`Dans un solide, 1 ppm = 1 mg/kg : ${fmt(mg)} mg ÷ ${fmt(kg)} kg = ${fmt(a)} ppm.`}; }
+  ];
+  const Q = pick(T)();
+  const vals = [clean(Q.a)]; Q.w.map(clean).forEach(v => { if (!vals.includes(v) && v > 0) vals.push(v); });
+  while (vals.length < 4) vals.push(clean(Q.a * pick([2,5,0.5,100])));
+  Q.opts = shuffle(vals.slice(0,4)); Q.a = clean(Q.a); return Q;
+}
+function mission2(m){
+  let left = 75, score = 0, right = 0, streak = 0, Q = null, timer = 0, busy = false;
+  const mult = () => Math.min(4, 1 + Math.floor(streak/3));
+  C.innerHTML = chrome(m, `<span class="pill" id="pt">0 pts</span><span class="pill" id="pr">0 bonnes</span>`) +
+    `<div class="turbo"><div class="timer" role="progressbar" aria-label="Temps restant"><i id="tm"></i></div>
+     <div class="big" id="q"></div><div class="choices" id="ch"></div><div class="combo" id="cb"></div><div id="fb"></div>
+     <div class="row" id="start"><p class="task" style="margin:0">Choisis la bonne conversion (touches 1 à 4). Une erreur coûte 4 secondes. Prêt ?</p><button type="button" class="btn go" id="go">Démarrer</button></div></div>`;
+  const stop = () => { clearInterval(timer); removeEventListener("keydown", key); };
+  bindBack(stop);
+  function key(e){ if (/^Digit[1-4]$/.test(e.code)) answer(+e.code.slice(5)-1); }
+  function show(){
+    Q = genQ(); busy = false;
+    $("#q").textContent = Q.q; $("#q").style.fontSize = Q.q.length > 34 ? "clamp(17px,2.4vw,24px)" : "";
+    $("#ch").innerHTML = Q.opts.map((v,i) => `<button type="button" class="choice" data-i="${i}"><b>${i+1}</b>${fmt(v)} ${Q.u}</button>`).join("");
+    C.querySelectorAll(".choice").forEach(b => b.addEventListener("click", () => answer(+b.dataset.i)));
+  }
+  function answer(i){
+    if (busy || !Q || left <= 0) return; busy = true;
+    const good = Q.opts[i] === Q.a, btns = C.querySelectorAll(".choice");
+    btns.forEach((b,k) => { if (Q.opts[k] === Q.a) b.classList.add("right"); else if (k === i) b.classList.add("wrong"); });
+    if (good){ streak++; right++; score += 10*mult(); beep("good"); $("#fb").innerHTML = ""; }
+    else { streak = 0; left = Math.max(0, left-4); beep("bad"); $("#fb").innerHTML = `<div class="feedback bad"><b>Question précédente : ${fmt(Q.a)} ${Q.u}.</b> ${Q.e}</div>`; }
+    $("#pt").textContent = `${score} pts`; $("#pr").textContent = `${right} bonnes`;
+    $("#cb").textContent = mult() > 1 ? `Série de ${streak} · points ×${mult()}` : streak ? `Série de ${streak}` : "";
+    setTimeout(() => { if (left > 0) show(); }, good ? 380 : 1100);
+  }
+  $("#go").addEventListener("click", () => {
+    $("#start").remove(); addEventListener("keydown", key); show();
+    timer = setInterval(() => {
+      left -= 0.2; $("#tm").style.width = Math.max(0, left/75*100) + "%";
+      if (left <= 0){ stop(); finish(m, right >= 12 ? 3 : right >= 7 ? 2 : 1, `${right} conversions réussies · ${score} points. Les clés : 1 mg/L = 1 ppm, 1 g/L = 1000 ppm, 1 % = 10 000 ppm.`); }
+    }, 200);
+  });
+}
+
+// ===== MISSION 3 : enquête à la rivière =====
+function mission3(m){
+  const SCEN = pick([
+    {cont:"nitrates", des:"des nitrates", src:"Ferme et champs fertilisés", icon:"ferme", why:"les engrais et le fumier lessivés par la pluie rejoignent la rivière"},
+    {cont:"cuivre", des:"du cuivre", src:"Ancienne mine de cuivre", icon:"mine", why:"l'eau qui ruisselle sur les résidus miniers rejoint la rivière"},
+    {cont:"hydrocarbures", des:"des hydrocarbures", src:"Garage et grand stationnement", icon:"garage", why:"les fuites d'huile et d'essence entraînées par la pluie rejoignent la rivière"},
+    {cont:"phosphates", des:"des phosphates", src:"Usine de détergents", icon:"usine", why:"les eaux de lavage de l'usine sont rejetées dans la rivière"}
+  ]);
+  const DECOY = pick([{n:"Parc municipal", icon:"parc"},{n:"Érablière", icon:"parc"},{n:"Camping", icon:"parc"},{n:"Bibliothèque", icon:"batiment"}]);
+  const NORM = pick([5,10,20]);
+  const seg = pick([0,1]);
+  const r1 = v => clean(Math.round(v*10)/10);
+  const low = r1(NORM*pick([0.1,0.2,0.3])), high = r1(NORM*pick([1.6,1.8,2,2.4]));
+  const ppm = seg === 0 ? [low, high, r1(high*pick([0.95,1])), 0] : [low, r1(low*pick([1.2,1.5])), high, 0];
+  ppm[3] = r1(ppm[2]*pick([0.6,0.65,0.7])); if (ppm[3] <= NORM) ppm[3] = r1(NORM*1.2);
+  const V = shuffle([0.1,0.2,0.25,0.5,1]).slice(0,4);
+  const S = ["A","B","C","D"].map((id,i) => ({id, ppm:ppm[i], V:V[i], mg:clean(ppm[i]*V[i]), done:false, ok:false}));
+  const sites = seg === 0 ? [{n:SCEN.src, icon:SCEN.icon}, DECOY] : [DECOY, {n:SCEN.src, icon:SCEN.icon}];
+  let score = 0, step = 0;
+  const ICON = (k, x0, y0) => ({
+    ferme:`<rect x="${x0}" y="${y0+6}" width="46" height="30" fill="#b5323f"/><path d="M${x0-4} ${y0+8} l27 -18 l27 18z" fill="#7a2a2a"/><rect x="${x0+56}" y="${y0+16}" width="56" height="20" fill="#7a9a3a"/>`,
+    mine:`<path d="M${x0} ${y0+36} l30 -40 l30 40z" fill="#5a4a3a"/><rect x="${x0+20}" y="${y0+20}" width="20" height="16" fill="#1b1410"/><rect x="${x0+66}" y="${y0+22}" width="40" height="14" fill="#c77a3a"/>`,
+    garage:`<rect x="${x0}" y="${y0}" width="60" height="36" fill="#6f7f8f"/><rect x="${x0+10}" y="${y0+14}" width="40" height="22" fill="#2a3440"/><rect x="${x0+70}" y="${y0+22}" width="26" height="12" fill="#d05a4a"/><rect x="${x0+100}" y="${y0+22}" width="26" height="12" fill="#5b8cff"/>`,
+    usine:`<rect x="${x0}" y="${y0+6}" width="60" height="32" fill="#6f7f8f"/><rect x="${x0+40}" y="${y0-16}" width="10" height="24" fill="#6f7f8f"/><rect x="${x0+12}" y="${y0+16}" width="10" height="10" fill="#ffc93c"/>`,
+    parc:`<circle cx="${x0+14}" cy="${y0+16}" r="14" fill="#2f5a1e"/><circle cx="${x0+40}" cy="${y0+12}" r="16" fill="#3d7a28"/><circle cx="${x0+66}" cy="${y0+18}" r="12" fill="#2f5a1e"/>`,
+    batiment:`<rect x="${x0}" y="${y0}" width="70" height="38" fill="#c9a36b"/><rect x="${x0+28}" y="${y0+18}" width="14" height="20" fill="#5a3a1a"/>`
+  })[k];
+  const river = `<div class="river"><svg viewBox="0 0 900 250" role="img" aria-label="Carte de la rivière aux Castors avec quatre stations d'échantillonnage">
+    <rect width="900" height="250" fill="#1b2a1f"/>
+    <path d="M0 150 C120 120 200 180 320 150 S520 120 640 150 S800 175 900 150" stroke="#2f6f9a" stroke-width="34" fill="none"/>
+    <path d="M700 0 C690 50 720 100 690 150" stroke="#2f6f9a" stroke-width="16" fill="none"/>
+    <text x="688" y="28" text-anchor="end" fill="#9fd4f5" font-family="Atkinson Hyperlegible, sans-serif" font-size="13">Ruisseau Clair</text>
+    <path d="M10 150 l24 0 m-8 -6 l8 6 l-8 6" stroke="#bfe3ff" stroke-width="2" fill="none"/>
+    <g font-family="Atkinson Hyperlegible, sans-serif" font-size="13" fill="#eef3f1">
+      ${ICON(sites[0].icon, 190, 34)}<text x="190" y="96">${sites[0].n}</text>
+      ${ICON(sites[1].icon, 432, 194)}<text x="418" y="244">${sites[1].n}</text>
+      <circle cx="770" cy="20" r="12" fill="#2f5a1e"/><circle cx="800" cy="22" r="12" fill="#2f5a1e"/><text x="760" y="56">Forêt</text>
+    </g>
+    ${[[120,138],[330,150],[580,128],[840,160]].map(([x,y],i) => `<g><circle cx="${x}" cy="${y}" r="17" fill="#0b0f16" stroke="#b48cff" stroke-width="3"/><text x="${x}" y="${y+5}" text-anchor="middle" fill="#b48cff" font-family="Pixelify Sans, monospace" font-size="17" font-weight="700">${"ABCD"[i]}</text></g>`).join("")}
+  </svg></div>`;
+  function cards(){
+    return `<div class="samples">${S.map((s,i) => `<div class="sample ${s.done ? (s.ok?"done":"miss") : (i===step?"on":"")}"><h3>Station ${s.id}</h3>
+      <p>Échantillon : ${vol(s.V)}</p><p>Masse de ${SCEN.cont} mesurée : ${fmt(s.mg)} mg</p>
+      ${s.done ? `<p class="res" style="color:${s.ppm > NORM ? "var(--hit)" : "var(--ok)"}">${fmt(s.ppm)} ppm ${s.ppm > NORM ? "· dépasse" : "· conforme"}</p><p style="color:var(--dim)">${s.ok ? "✓ ton calcul était juste" : "✗ calcul à revoir"}</p>` : i===step ? `<div class="ansrow"><label for="in">C =</label><input id="in" inputmode="decimal" autocomplete="off"><span>ppm</span></div><button type="button" class="btn go" id="chk">Vérifier</button>` : `<p class="res" style="color:var(--dim)">en attente</p>`}</div>`).join("")}</div>`;
+  }
+  function render(fbHtml){
+    C.innerHTML = chrome(m, `<span class="pill">Norme : ${NORM} ppm</span><span class="pill">Points : ${score}/7</span>`) +
+      `<p class="task">${step < 4 ? `Calcule la concentration en ${SCEN.cont} (ppm) de l'échantillon de la station ${S[step].id}.` : "Tous les échantillons sont analysés. Conclus l'enquête."}</p>${river}${cards()}<div id="fb">${fbHtml||""}</div><div id="qz"></div>`;
+    bindBack();
+    if (step < 4){
+      const inp = $("#in"); inp.focus({preventScroll:true});
+      const go = () => {
+        const v = parseNum(inp.value); if (isNaN(v)){ $("#fb").innerHTML = `<div class="feedback bad">Écris un nombre (ex. : 2,5).</div>`; return; }
+        const s = S[step], good = Math.abs(v - s.ppm) <= s.ppm*0.005;
+        s.done = true; s.ok = good; if (good){ score++; beep("good"); } else beep("bad");
+        const fb = `<div class="feedback ${good?"":"bad"}"><b>Station ${s.id} : ${fmt(s.ppm)} ppm.</b> ${vol(s.V)} = ${fmt(s.V)} L, donc C = ${fmt(s.mg)} mg ÷ ${fmt(s.V)} L = ${fmt(s.ppm)} mg/L = ${fmt(s.ppm)} ppm.${good ? "" : ` (Tu as écrit ${fmt(v)}.)`}</div>`;
+        step++; render(fb); if (step === 4) quiz(0);
+      };
+      $("#chk").addEventListener("click", go); inp.addEventListener("keydown", e => { if (e.key === "Enter") go(); });
+    }
+  }
+  const over = S.filter(x => x.ppm > NORM).map(x => x.id);
+  const ovTxt = over.length === 3 ? "B, C et D" : over.length === 2 ? "C et D" : over.length === 1 ? "Seulement " + over[0] : "Aucune";
+  const OV = ["Seulement C","C et D","B, C et D","Aucune"]; if (!OV.includes(ovTxt)) OV[0] = ovTxt;
+  const DIL = "Le ruisseau Clair ajoute de l'eau : la même masse de contaminant se répartit dans un plus grand volume";
+  const dilO = shuffle([DIL, "Le contaminant disparaît dans l'eau", "L'eau devient plus chaude", "Les poissons filtrent le contaminant"]);
+  const QZ = shuffle([
+    {q:`Quelles stations dépassent la norme de ${NORM} ppm ?`, o:OV, a:OV.indexOf(ovTxt), e:`${S.map(x => `${x.id} : ${fmt(x.ppm)} ppm`).join(" · ")}. La norme est de ${NORM} ppm.`},
+    {q:`Où se trouve la source probable ${SCEN.des} ?`, o:[`${sites[0].n}, entre A et B`, `${sites[1].n}, entre B et C`, "La forêt du ruisseau Clair, entre C et D", "Avant la station A"], a:seg, e:`La concentration fait un bond entre ${seg === 0 ? "A et B" : "B et C"} : c'est là que ${SCEN.why}.`}
+  ]).concat([{q:"Pourquoi la concentration baisse-t-elle entre C et D, même sans nouvelle source ?", o:dilO, a:dilO.indexOf(DIL), e:"C'est une dilution : C = m ÷ V. Si V augmente et que m reste presque le même, C diminue."}]);
+  function quiz(i){
+    if (i >= QZ.length){ finish(m, score === 7 ? 3 : score >= 5 ? 2 : 1, `${score} points sur 7. Tu as calculé 4 concentrations en ppm, comparé à la norme et identifié la source ${SCEN.des}.`); return; }
+    const Z = QZ[i];
+    $("#qz").innerHTML = `<p class="task" style="margin-bottom:8px">${Z.q}</p><div class="opts">${Z.o.map((t,k) => `<button type="button" data-k="${k}">${t}</button>`).join("")}</div><div id="qfb" style="margin-top:8px"></div>`;
+    $("#qz").scrollIntoView({block:"nearest", behavior:"smooth"});
+    let done = false;
+    $("#qz").querySelectorAll(".opts button").forEach(b => b.addEventListener("click", () => {
+      if (done) return; done = true; const k = +b.dataset.k, good = k === Z.a;
+      if (good){ score++; beep("good"); } else beep("bad");
+      $("#qz").querySelectorAll(".opts button").forEach((c,j) => { if (j === Z.a) c.classList.add("right"); else if (j === k) c.classList.add("wrong"); });
+      $("#qfb").innerHTML = `<div class="feedback ${good?"":"bad"}"><b>${good?"Exact !":"À retenir :"}</b> ${Z.e}</div><div class="row" style="margin-top:8px"><button type="button" class="btn go" id="nx">${i === QZ.length-1 ? "Voir le résultat" : "Question suivante ▸"}</button></div>`;
+      C.querySelector(".pill:nth-child(2)").textContent = `Points : ${score}/7`;
+      $("#nx").addEventListener("click", () => quiz(i+1)); $("#nx").focus({preventScroll:true});
+    }));
+  }
+  render();
+}
+
+// ===== MISSION ACTION : patrouille du bassin =====
+function drawChibi(x, cx, cy, s, t, opt){
+  opt = opt || {};
+  const P = (a,b,w,h,c) => { x.fillStyle = c; x.fillRect(cx + (a-6)*s, cy + b*s, w*s, h*s); };
+  const step = opt.move ? Math.floor(t*10)%2 : 0;
+  P(3,0,6,2,"#4a2b1a"); P(2,2,8,5,"#f2c79a"); P(2,2,1,3,"#4a2b1a");
+  P(3,3,6,2,"#1a1424"); P(4,3,1,1,"#5ee6c8"); P(7,3,1,1,"#5ee6c8");
+  P(1,7,10,6,"#ffffff"); P(5,7,2,6,"#ff7a59"); P(0,8,2,4,"#f2c79a"); P(10,8,2,4,"#f2c79a");
+  if (step){ P(2,13,3,2,"#2d3561"); P(7,13,3,1,"#2d3561"); P(2,15,3,1,"#1a1424"); P(7,14,3,1,"#1a1424"); }
+  else { P(2,13,3,2,"#2d3561"); P(7,13,3,2,"#2d3561"); P(2,15,3,1,"#1a1424"); P(7,15,3,1,"#1a1424"); }
+}
+function drawBlob(x, b, t, big){
+  const r = b.r, wob = Math.sin(t*5 + b.ph)*2;
+  x.fillStyle = b.col; x.beginPath();
+  for (let i=0;i<=20;i++){ const a = i/20*Math.PI*2; const rr = r + Math.sin(a*3 + t*4 + b.ph)*(big?5:3); x.lineTo(b.x + Math.cos(a)*rr, b.y + Math.sin(a)*(rr - wob)); }
+  x.fill();
+  x.fillStyle = "#ffffff55"; x.beginPath(); x.arc(b.x - r*0.35, b.y - r*0.4, r*0.22, 0, 7); x.fill();
+  const e = big ? 2 : 1;
+  x.fillStyle = "#fff"; x.fillRect(b.x - 11*e, b.y - 6*e, 8*e, 8*e); x.fillRect(b.x + 3*e, b.y - 6*e, 8*e, 8*e);
+  x.fillStyle = "#12161f"; x.fillRect(b.x - 8*e, b.y - 3*e, 4*e, 4*e); x.fillRect(b.x + 6*e, b.y - 3*e, 4*e, 4*e);
+  x.fillRect(b.x - 12*e, b.y - 10*e, 9*e, 2*e); x.fillRect(b.x + 3*e, b.y - 10*e, 9*e, 2*e);
+}
+function drawHeroPreview(c){
+  if (!c) return; const x = c.getContext("2d");
+  x.fillStyle = "#0f3b4a"; x.fillRect(0,0,96,72); x.fillStyle = "#14495b"; for (let i=0;i<96;i+=12) x.fillRect(i,0,1,72);
+  drawChibi(x, 26, 30, 2, 0, {});
+  x.fillStyle = "#5ee6c8"; x.fillRect(42, 46, 6, 6); x.fillRect(52, 44, 5, 5);
+  drawBlob(x, {x:74, y:42, r:13, col:"#7bc96f", ph:0}, 0, false);
+}
+
+function mission4(m){
+  const W = 960, H = 540, X0 = 34, X1 = W-34, Y0 = 92, Y1 = H-30;
+  const COLS = ["#7bc96f","#8aa4c8","#5b8cff","#b48cff","#e0a34a"];
+  const VIEWS = {
+    ppm:  v => ({label:`${fmt(v)} ${pick(["ppm","mg/L"])}`, conv:null}),
+    gL:   v => ({label:`${fmt(v/1000)} g/L`, conv:`${fmt(v/1000)} g/L × 1000 = ${fmt(v)} ppm`}),
+    pct:  v => ({label:`${fmt(v/10000)} %`, conv:`${fmt(v/10000)} % × 10 000 = ${fmt(v)} ppm`}),
+    mv:   v => { const mL = pick([100,200,250,500]); const mg = clean(v*mL/1000); return {label:`${fmt(mg)} mg / ${mL} mL`, conv:`${fmt(mg)} mg ÷ ${fmt(mL/1000)} L = ${fmt(v)} ppm`}; }
+  };
+  const range = (a, b, n, step) => { const out = new Set(); let k = 0; while (out.size < n && k++ < 400){ out.add(clean(Math.round(rnd(a, b)/step)*step)); } return [...out].filter(v => v >= a && v <= b); };
+  const mk = (norm, view, nUp, nDown, step, tip, boss) => ({norm, view, boss, tip, nUp, nDown,
+    up: range(norm + step, norm*4, boss ? 8 : nUp + 2, step), down: range(step, norm - step, boss ? 6 : nDown + 2, step)});
+  const n1 = pick([5,10,15]), n2 = pick([10,20,25]), n3 = pick([40,50,100]), n4 = pick([5,8,10]), n5 = pick([20,25,30]);
+  const WAVES = [
+    mk(n1, "ppm", 3, 3, 1, "Dans l'eau, 1 mg/L = 1 ppm."),
+    mk(n2, "gL", 4, 3, 1, "1 g/L = 1000 ppm : multiplie par 1000."),
+    mk(n3, "pct", 4, 4, 10, "1 % = 10 000 ppm : multiplie par 10 000."),
+    mk(n4, "mv", 5, 4, 1, "Convertis les mL en L, puis C = m ÷ V."),
+    mk(n5, "mix", 0, 0, 5, `Le boss change d'étiquette : tire seulement quand il dépasse ${n5} ppm !`, true)
+  ];
+  const view = (w, v) => VIEWS[w.view === "mix" ? pick(["ppm","gL","pct","mv"]) : w.view](v);
+
+  C.innerHTML = chrome(m, `<span class="pill" id="pw">Vague 1/5</span><span class="pill" id="ph">♥♥♥♥♥</span><span class="pill" id="ps">0 pts</span>`) +
+    `<div class="arena"><canvas id="ar" width="${W}" height="${H}" aria-label="Bassin de traitement : déplace ton personnage et neutralise les contaminants au-dessus de la norme"></canvas><div class="aov" id="aov" hidden></div></div>
+     <div class="tpad" id="tpad"><div class="g"><button type="button" data-k="left" aria-label="Gauche">◀</button><button type="button" data-k="up" aria-label="Haut">▲</button><button type="button" data-k="down" aria-label="Bas">▼</button><button type="button" data-k="right" aria-label="Droite">▶</button></div><button type="button" class="fire" data-k="fire">TIR</button></div>
+     <p class="help"><span><kbd>←↑↓→</kbd> ou <kbd>WASD</kbd> se déplacer</span><span><kbd>Espace</kbd> tirer</span><span>Clic ou toucher dans le bassin : tirer dans cette direction</span></p>
+     <div id="alog" aria-live="polite"></div>`;
+  const cv = $("#ar"), x = cv.getContext("2d");
+  const keys = {left:0,right:0,up:0,down:0,fire:0};
+  const KM = {ArrowLeft:"left",KeyA:"left",ArrowRight:"right",KeyD:"right",ArrowUp:"up",KeyW:"up",ArrowDown:"down",KeyS:"down",Space:"fire",KeyJ:"fire"};
+  const kd = e => { const k = KM[e.code]; if (!k || !$("#aov").hidden) return; e.preventDefault(); keys[k] = 1; };
+  const ku = e => { const k = KM[e.code]; if (k) keys[k] = 0; };
+  addEventListener("keydown", kd); addEventListener("keyup", ku);
+  C.querySelectorAll("#tpad button").forEach(b => { const k = b.dataset.k;
+    const on = e => { e.preventDefault(); keys[k] = 1; b.classList.add("on"); }, off = e => { e.preventDefault(); keys[k] = 0; b.classList.remove("on"); };
+    b.addEventListener("pointerdown", on); ["pointerup","pointerleave","pointercancel"].forEach(ev => b.addEventListener(ev, off)); });
+  cv.addEventListener("pointerdown", e => { const r = cv.getBoundingClientRect(); const tx = (e.clientX - r.left)*W/r.width, ty = (e.clientY - r.top)*H/r.height; const dx = tx - P.x, dy = ty - (P.y-10), d = Math.hypot(dx,dy) || 1; P.dir = {x:dx/d, y:dy/d}; shoot(); });
+
+  let raf = 0, last = performance.now(), T = 0, running = false;
+  let wi = 0, hearts = 5, score = 0, falseTotal = 0, W_ = null, blobs = [], shots = [], parts = [], pops = [], record = [], boss = null, minionT = 0, clearT = 0;
+  const P = {x:W/2, y:H-90, dir:{x:0,y:-1}, inv:0, cool:0, move:false};
+  const cleanup = () => { cancelAnimationFrame(raf); removeEventListener("keydown", kd); removeEventListener("keyup", ku); };
+  bindBack(cleanup);
+
+  function log(html, good){ $("#alog").innerHTML = `<div class="feedback ${good?"":"bad"}">${html}</div>`; }
+  function pills(){ $("#pw").textContent = `Vague ${wi+1}/5`; $("#ph").textContent = "♥".repeat(hearts) + "♡".repeat(5-hearts); $("#ps").textContent = `${score} pts`; }
+  function place(r){ for (let k=0;k<60;k++){ const bx = X0+r+rnd(0, X1-X0-2*r), by = Y0+r+rnd(0, Y1-Y0-2*r); if (Math.hypot(bx-P.x, by-P.y) > 190 && blobs.every(o => Math.hypot(o.x-bx, o.y-by) > o.r + r + 70)) return [bx,by]; } return [X0+60, Y0+60]; }
+  function mkBlob(v, r){ const w = W_, vw = view(w, v), [bx,by] = place(r); const a = rnd(0, 6.28), sp = rnd(28, 55); return {x:bx, y:by, vx:Math.cos(a)*sp, vy:Math.sin(a)*sp, r, ppm:v, label:vw.label, conv:vw.conv, col:pick(COLS), ph:rnd(0,6), dead:false, safe:false, flash:0}; }
+  function rnd(a,b){ return a + Math.random()*(b-a); }
+
+  function startWave(){
+    W_ = WAVES[wi]; blobs = []; shots = []; record = []; boss = null; clearT = 0;
+    P.x = W/2; P.y = H-90; P.inv = 1;
+    if (W_.boss){
+      const v = pick(W_.up), vw = view(W_, v);
+      boss = {x:W/2, y:Y0+110, vx:60, vy:30, r:58, ppm:v, label:vw.label, conv:vw.conv, col:"#d0605a", ph:0, hp:6, max:6, swap:2.8, flash:0, boss:true};
+      minionT = 4;
+    } else {
+      shuffle(W_.up).slice(0, W_.nUp).forEach(v => blobs.push(mkBlob(v, 24)));
+      shuffle(W_.down).slice(0, W_.nDown).forEach(v => blobs.push(mkBlob(v, 24)));
+    }
+    pills();
+    overlay(`<h3>Vague ${wi+1} · Norme : ${W_.norm} ppm</h3><p>${W_.boss ? "Le Grand Déversement arrive ! Son étiquette change toutes les quelques secondes." : `Neutralise <b>tous les contaminants au-dessus de ${W_.norm} ppm</b>. Ceux qui respectent la norme doivent être épargnés : tirer dessus est une fausse alerte et coûte un cœur.`}</p><p class="tip">${W_.tip}</p><button type="button" class="btn go" id="ago">C'est parti ▸</button>`, () => { running = true; });
+  }
+  function overlay(html, onGo){
+    running = false; for (const k in keys) keys[k] = 0;
+    const o = $("#aov"); o.innerHTML = `<div class="acard">${html}</div>`; o.hidden = false;
+    const b = $("#ago"); if (b){ b.focus({preventScroll:true}); b.addEventListener("click", () => { o.hidden = true; last = performance.now(); onGo && onGo(); }); }
+  }
+  function shoot(){
+    if (!running || P.cool > 0) return; P.cool = 0.24;
+    shots.push({x:P.x + P.dir.x*20, y:P.y - 10 + P.dir.y*20, vx:P.dir.x*560, vy:P.dir.y*560, t:1.2});
+    beep("tick");
+  }
+  function burst(bx, by, col, n){ for (let i=0;i<n;i++){ const a = rnd(0,6.28), s = rnd(60,220); parts.push({x:bx, y:by, vx:Math.cos(a)*s, vy:Math.sin(a)*s, t:rnd(.3,.7), col}); } }
+  function hurt(){ if (P.inv > 0) return; hearts--; P.inv = 1.4; beep("bad"); pills(); if (hearts <= 0) lose(); }
+  function lose(){
+    running = false;
+    overlay(`<h3>Bassin débordé !</h3><p>Plus de cœurs. Révise les conversions de l'aide-mémoire et recommence.</p><div class="row" style="justify-content:center"><button type="button" class="btn go" id="ago">Rejouer</button><button type="button" class="btn" id="aback">Toutes les missions</button></div>`, () => { cleanup(); mission4(m); });
+    $("#aback").addEventListener("click", () => { cleanup(); hub(); });
+  }
+  function hitBlob(b){
+    const above = b.ppm > W_.norm, conv = b.conv ? `${b.conv}` : `${b.label} = ${fmt(b.ppm)} ppm`;
+    if (above){
+      b.dead = true; score += 100; beep("good"); burst(b.x, b.y, b.col, 22); pops.push({x:b.x, y:b.y-30, t:1, s:"+100", c:"#5ee6a0"});
+      record.push({conv, ok:true, txt:"neutralisé"});
+      log(`<b>Neutralisé !</b> ${conv} &gt; ${W_.norm} ppm.`, true);
+    } else {
+      falseTotal++; b.safe = true; b.flash = 0.6; hurt(); pops.push({x:b.x, y:b.y-30, t:1, s:"Fausse alerte", c:"#ff5d6c"});
+      if (!record.find(r => r.b === b)) record.push({b, conv, ok:false, txt:"fausse alerte"});
+      log(`<b>Fausse alerte !</b> ${conv}, ce qui respecte la norme de ${W_.norm} ppm.`, false);
+    }
+  }
+  function hitBoss(){
+    const b = boss, above = b.ppm > W_.norm, conv = b.conv || `${b.label} = ${fmt(b.ppm)} ppm`;
+    if (above){ b.hp--; b.flash = 0.3; score += 150; beep("good"); burst(b.x, b.y, "#ff7a59", 14); log(`<b>Touché !</b> ${conv} &gt; ${W_.norm} ppm.`, true); if (b.hp <= 0){ burst(b.x, b.y, "#ff7a59", 80); boss = null; clearT = 0.01; } else { swapBoss(); } }
+    else { falseTotal++; b.hp = Math.min(b.max, b.hp + 1); hurt(); log(`<b>Fausse alerte !</b> ${conv} : sous la norme. Le boss récupère.`, false); }
+  }
+  function swapBoss(){ const v = Math.random() < 0.55 ? pick(W_.up) : pick(W_.down); const vw = view(W_, v); Object.assign(boss, {ppm:v, label:vw.label, conv:vw.conv, swap:rnd(2.4, 3.4)}); }
+  function waveDone(){
+    running = false;
+    if (W_.boss){
+      const st = falseTotal <= 1 && hearts >= 4 ? 3 : falseTotal <= 4 ? 2 : 1;
+      cleanup(); finish(m, st, `Le Grand Déversement est neutralisé ! ${score} points · ${falseTotal} fausse(s) alerte(s) en tout.`); return;
+    }
+    blobs.filter(b => !b.dead && !b.safe).forEach(b => record.push({conv: b.conv || `${b.label} = ${fmt(b.ppm)} ppm`, ok:true, txt:"épargné, sous la norme"}));
+    overlay(`<h3>Vague ${wi+1} nettoyée !</h3><p>Récapitulatif (norme : ${W_.norm} ppm)</p><ul class="rec">${record.map(r => `<li class="${r.ok?"":"bad"}"><span>${r.conv}</span><b>${r.txt}</b></li>`).join("")}</ul><button type="button" class="btn go" id="ago">Vague suivante ▸</button>`, () => { wi++; startWave(); });
+  }
+
+  function update(dt){
+    T += dt;
+    const ax = (keys.right?1:0) - (keys.left?1:0), ay = (keys.down?1:0) - (keys.up?1:0);
+    P.move = !!(ax || ay);
+    if (P.move){ const d = Math.hypot(ax, ay); P.dir = {x:ax/d, y:ay/d}; P.x += ax/d*250*dt; P.y += ay/d*250*dt; }
+    P.x = Math.max(X0+18, Math.min(X1-18, P.x)); P.y = Math.max(Y0+30, Math.min(Y1-8, P.y));
+    P.cool = Math.max(0, P.cool - dt); P.inv = Math.max(0, P.inv - dt);
+    if (keys.fire) shoot();
+    const movers = boss ? [boss, ...blobs] : blobs;
+    for (const b of movers){
+      if (b.dead) continue;
+      b.x += b.vx*dt; b.y += b.vy*dt;
+      if (b.x < X0+b.r || b.x > X1-b.r){ b.vx *= -1; b.x = Math.max(X0+b.r, Math.min(X1-b.r, b.x)); }
+      if (b.y < Y0+b.r+16 || b.y > Y1-b.r){ b.vy *= -1; b.y = Math.max(Y0+b.r+16, Math.min(Y1-b.r, b.y)); }
+      b.flash = Math.max(0, (b.flash||0) - dt);
+      if (Math.hypot(b.x-P.x, b.y-(P.y-10)) < b.r + 16){ hurt(); const d = Math.hypot(P.x-b.x, P.y-b.y)||1; P.x += (P.x-b.x)/d*30; P.y += (P.y-b.y)/d*30; }
+    }
+    if (boss){
+      boss.swap -= dt; if (boss.swap <= 0) swapBoss();
+      minionT -= dt; if (minionT <= 0 && blobs.filter(b => !b.dead).length < 4){ minionT = 6.5; const v = Math.random() < 0.5 ? pick(W_.up) : pick(W_.down); const nb = mkBlob(v, 20); nb.x = boss.x; nb.y = boss.y; blobs.push(nb); }
+    }
+    for (const s of shots){
+      s.x += s.vx*dt; s.y += s.vy*dt; s.t -= dt;
+      if (s.x < X0 || s.x > X1 || s.y < Y0 || s.y > Y1) s.t = 0;
+      if (s.t <= 0) continue;
+      if (boss && Math.hypot(s.x-boss.x, s.y-boss.y) < boss.r){ s.t = 0; hitBoss(); continue; }
+      for (const b of blobs){ if (!b.dead && Math.hypot(s.x-b.x, s.y-b.y) < b.r + 4){ s.t = 0; if (b.safe){ b.flash = 0.3; } else hitBlob(b); break; } }
+    }
+    shots = shots.filter(s => s.t > 0);
+    parts.forEach(p => { p.x += p.vx*dt; p.y += p.vy*dt; p.vx *= 0.92; p.vy *= 0.92; p.t -= dt; }); parts = parts.filter(p => p.t > 0);
+    pops.forEach(p => p.t -= dt); pops = pops.filter(p => p.t > 0);
+    pills();
+    if (!W_.boss && running && blobs.every(b => b.dead || b.ppm <= W_.norm)){ clearT += dt; if (clearT > 0.7) waveDone(); }
+    if (W_.boss && !boss && clearT > 0){ clearT += dt; if (clearT > 0.9) waveDone(); }
+  }
+
+  function draw(){
+    // bassin
+    x.fillStyle = "#0f3b4a"; x.fillRect(0,0,W,H);
+    x.fillStyle = "#6f7f8f"; x.fillRect(0, 0, W, Y0 - 6); x.fillRect(0, 0, X0, H); x.fillRect(X1, 0, W-X1, H); x.fillRect(0, Y1, W, H-Y1);
+    x.fillStyle = "#5d6d7a"; for (let i=0;i<W;i+=40) x.fillRect(i, Y0-10, 20, 4);
+    x.fillStyle = "#14495b"; for (let i=X0;i<X1;i+=48) x.fillRect(i, Y0, 2, Y1-Y0); for (let j=Y0;j<Y1;j+=48) x.fillRect(X0, j, X1-X0, 2);
+    x.strokeStyle = "#ffffff18"; x.lineWidth = 2; for (let i=0;i<6;i++){ const rr = ((T*30 + i*60) % 240); x.beginPath(); x.arc(200 + i*110, 300 + (i%2)*80, rr, 0, 7); x.stroke(); }
+    x.fillStyle = "#3d4b57"; x.fillRect(X0-30, 260, 40, 26); x.fillRect(X1-10, 330, 40, 26);
+    // bandeau
+    if (W_){
+      x.fillStyle = "#12161f"; x.fillRect(0, 0, W, Y0-14);
+      x.fillStyle = "#ff7a59"; x.font = `700 22px "Pixelify Sans", monospace`; x.textAlign = "left"; x.fillText(`NORME : ${W_.norm} ppm`, 18, 34);
+      x.fillStyle = "#eef3f1"; x.font = `700 17px "Atkinson Hyperlegible", sans-serif`;
+      x.fillText(W_.boss ? "Tire sur le boss seulement quand son étiquette DÉPASSE la norme." : "Neutralise ce qui DÉPASSE la norme. Épargne le reste.", 18, 62);
+      const left = W_.boss ? (boss ? `Boss : ${boss.hp}/${boss.max}` : "") : `Contaminants restants : ${blobs.filter(b => !b.dead && b.ppm > W_.norm).length}`;
+      x.textAlign = "right"; x.fillStyle = "#ffc93c"; x.fillText(left, W-18, 34);
+    }
+    // contaminants
+    const all = boss ? [...blobs, boss] : blobs;
+    for (const b of all){
+      if (b.dead) continue;
+      if (b.flash && Math.floor(T*24)%2) x.globalAlpha = 0.4;
+      drawBlob(x, b, T, !!b.boss); x.globalAlpha = 1;
+      if (b.safe){ x.strokeStyle = "#5ee6a0"; x.lineWidth = 3; x.setLineDash([6,6]); x.beginPath(); x.arc(b.x, b.y, b.r+8, 0, 7); x.stroke(); x.setLineDash([]); }
+      x.font = `700 ${b.boss ? 20 : 15}px "Atkinson Hyperlegible", sans-serif`; x.textAlign = "center";
+      const tw = x.measureText(b.label).width + 14, ly = b.y - b.r - 16;
+      x.fillStyle = b.safe ? "#173b2c" : "#0b0f16e6"; x.fillRect(b.x - tw/2, ly - 17, tw, 24);
+      x.fillStyle = b.safe ? "#5ee6a0" : "#ffffff"; x.fillText(b.label, b.x, ly);
+      if (b.boss){ x.fillStyle = "#0b0f16"; x.fillRect(b.x-50, b.y+b.r+10, 100, 8); x.fillStyle = "#ff7a59"; x.fillRect(b.x-50, b.y+b.r+10, 100*b.hp/b.max, 8); }
+    }
+    for (const s of shots){ x.fillStyle = "#5ee6c8"; x.beginPath(); x.arc(s.x, s.y, 6, 0, 7); x.fill(); x.fillStyle = "#ffffff"; x.fillRect(s.x-2, s.y-2, 3, 3); }
+    for (const p of parts){ x.fillStyle = p.col; x.fillRect(p.x, p.y, 4, 4); }
+    // personnage
+    if (!(P.inv > 0 && Math.floor(T*16)%2)){
+      x.fillStyle = "#00000040"; x.beginPath(); x.ellipse(P.x, P.y+16, 18, 6, 0, 0, 7); x.fill();
+      drawChibi(x, P.x, P.y - 34, 3, T, {move:P.move});
+      x.strokeStyle = "#ff7a59"; x.lineWidth = 6; x.beginPath(); x.moveTo(P.x, P.y-10); x.lineTo(P.x + P.dir.x*26, P.y - 10 + P.dir.y*26); x.stroke();
+      x.fillStyle = "#5ee6c8"; x.beginPath(); x.arc(P.x + P.dir.x*28, P.y - 10 + P.dir.y*28, 4, 0, 7); x.fill();
+    }
+    for (const p of pops){ x.fillStyle = p.c; x.font = `700 20px "Pixelify Sans", monospace`; x.textAlign = "center"; x.fillText(p.s, p.x, p.y - (1-p.t)*36); }
+  }
+  function loop(now){
+    const dt = Math.min(1/30, (now - last)/1000); last = now;
+    if (!document.body.contains(cv)) return;
+    if (running) update(dt); else T += dt;
+    draw(); raf = requestAnimationFrame(loop);
+  }
+  startWave();
+  raf = requestAnimationFrame(loop);
+}
+
+hub();
+</script>
+
+</body>
+</html>

@@ -1,0 +1,1526 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Odyssée ST 4</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;600;700&family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&display=swap">
+<style>
+/* Layout: one 16:9 "console" stage centred on a dark cabinet; DOM overlays sit on the canvas; touch pad below on small screens. Single dark arcade look by choice. */
+:root{
+  color-scheme: dark;
+  --cab:#14121f;        /* arcade cabinet */
+  --cab2:#1f1b30;
+  --ink:#f3eedc;        /* warm phosphor white */
+  --dim:#a8a3bd;
+  --coin:#ffc93c;       /* coin / correct gold */
+  --hit:#ff5d6c;        /* damage */
+  --ok:#5ee6a0;
+  --panel:#262140;
+  --line:#3d3663;
+  --f-display:"Pixelify Sans", "Courier New", monospace;
+  --f-body:"Atkinson Hyperlegible", "Segoe UI", system-ui, sans-serif;
+}
+html,body{background:var(--cab);color:var(--ink)}
+body{font-family:var(--f-body);font-size:15px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:14px 24px}
+.wrap{max-width:1100px;margin:0 auto;display:flex;flex-direction:column;gap:12px}
+header.top{display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap}
+header.top h1{font-family:var(--f-display);font-weight:700;font-size:clamp(22px,3.4vw,34px);margin:0;letter-spacing:.02em;text-wrap:balance}
+header.top h1 span{color:var(--coin)}
+header.top p{margin:0;color:var(--dim);font-size:13px}
+.stage{position:relative;width:100%;aspect-ratio:16/9;max-width:100%;background:#000;border-radius:6px;overflow:hidden;box-shadow:0 0 0 3px var(--line),0 18px 50px rgba(0,0,0,.5)}
+.stage canvas{position:absolute;inset:0;width:100%;height:100%;image-rendering:pixelated;display:block}
+[hidden]{display:none!important}
+.hud{z-index:5}
+.ov{z-index:6;position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:2.5%}
+.ov[hidden]{display:none!important}
+button{font-family:var(--f-display);cursor:pointer}
+button:focus-visible{outline:3px solid var(--coin);outline-offset:2px}
+.btn{background:var(--panel);color:var(--ink);border:2px solid var(--line);border-radius:4px;padding:8px 14px;font-size:15px;font-weight:600;box-shadow:0 3px 0 #0008}
+.btn:hover{border-color:var(--coin)}
+.btn:active{transform:translateY(2px);box-shadow:none}
+.btn.gold{background:var(--coin);color:#2a1c00;border-color:#b98a10}
+
+/* HUD */
+.hud{position:absolute;left:0;right:0;top:0;display:flex;justify-content:space-between;align-items:center;padding:1.2% 2%;font-family:var(--f-display);font-size:clamp(11px,1.8vw,18px);pointer-events:none;text-shadow:2px 2px 0 #000}
+.hud .grp{display:flex;gap:1.6em;align-items:center}
+.hud .hearts{color:var(--hit);letter-spacing:.1em}
+.hud .pause{pointer-events:auto;font-size:inherit;padding:2px 10px}
+
+/* World select */
+.menu{flex-direction:column;gap:2%;justify-content:flex-start;padding-top:3%;overflow:auto}
+.menu h2{font-family:var(--f-display);margin:0;font-size:clamp(16px,2.8vw,28px);text-shadow:3px 3px 0 #000;text-align:center}
+.menu .sub{margin:0;color:var(--ink);opacity:.85;font-size:clamp(11px,1.5vw,14px);text-align:center;text-shadow:1px 1px 0 #000}
+.worlds{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:1.4%;width:100%;margin-top:1%}
+.portal{position:relative;background:var(--w-bg);border:3px solid var(--w-edge);border-radius:6px;color:var(--w-ink);text-align:left;padding:8% 8% 10%;display:flex;flex-direction:column;gap:6px;min-width:0;box-shadow:0 5px 0 #0009;transition:transform .12s}
+.portal:hover,.portal:focus-visible{transform:translateY(-4px)}
+.portal .no{font-size:clamp(10px,1.2vw,12px);opacity:.8;letter-spacing:.08em;text-transform:uppercase}
+.portal .nm{font-size:clamp(12px,1.75vw,19px);font-weight:700;line-height:1.05}
+.portal .mode{font-family:var(--f-body);font-size:clamp(10px,1.2vw,12.5px);line-height:1.25;opacity:.92}
+.portal .stars{font-size:clamp(11px,1.6vw,17px);letter-spacing:.12em;margin-top:auto}
+.portal canvas{position:relative;width:100%;height:auto;aspect-ratio:4/3;border-radius:3px;image-rendering:pixelated;background:#0003}
+.menu .row{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;margin-top:1.5%}
+
+/* Quiz */
+.card{background:var(--panel);border:3px solid var(--q-edge,var(--coin));border-radius:8px;width:min(720px,100%);max-height:100%;overflow:auto;padding:clamp(12px,2.4vw,24px);box-shadow:0 8px 0 #000a;display:flex;flex-direction:column;gap:12px}
+.card .kick{font-family:var(--f-display);color:var(--q-edge,var(--coin));font-size:clamp(11px,1.4vw,14px);letter-spacing:.08em;text-transform:uppercase}
+.card .q{font-size:clamp(14px,2vw,20px);line-height:1.35;font-weight:700;margin:0}
+.opts{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.opt{font-family:var(--f-body);font-size:clamp(12.5px,1.6vw,16px);text-align:left;background:var(--cab2);color:var(--ink);border:2px solid var(--line);border-radius:6px;padding:10px 12px;line-height:1.3;font-weight:400}
+.opt b{font-family:var(--f-display);color:var(--coin);margin-right:6px}
+.opt:hover{border-color:var(--ink)}
+.opt.right{border-color:var(--ok);background:#173b2c}
+.opt.wrong{border-color:var(--hit);background:#4a1b26}
+.opt[disabled]{cursor:default}
+.expl{border-left:4px solid var(--ok);padding:6px 12px;background:#0003;font-size:clamp(12.5px,1.6vw,15.5px);line-height:1.4}
+.expl.bad{border-left-color:var(--hit)}
+.card .actions{display:flex;justify-content:flex-end;gap:8px}
+
+/* Codex */
+.codex{flex-direction:column;justify-content:flex-start;background:#0b0914f2;overflow:auto;gap:10px}
+.codex .head{display:flex;justify-content:space-between;align-items:center;width:100%;gap:8px;flex-wrap:wrap}
+.codex h2{font-family:var(--f-display);margin:0;font-size:clamp(16px,2.4vw,24px)}
+.tabs{display:flex;gap:6px;flex-wrap:wrap;width:100%}
+.tab{font-family:var(--f-display);background:var(--cab2);color:var(--dim);border:2px solid var(--line);border-radius:4px;padding:4px 10px;font-size:13px}
+.tab[aria-selected="true"]{color:#14121f;background:var(--t-c,var(--coin));border-color:var(--t-c,var(--coin))}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px;width:100%}
+.note{background:var(--panel);border:2px solid var(--line);border-top:5px solid var(--t-c,var(--coin));border-radius:6px;padding:10px 12px;font-size:13.5px;line-height:1.42;min-width:0}
+.note h3{font-family:var(--f-display);font-size:16px;margin:0 0 4px}
+.note p{margin:0}
+.note .f{font-family:"Courier New",monospace;background:#0004;padding:1px 5px;border-radius:3px;white-space:nowrap}
+.note.locked{opacity:.45;border-top-color:var(--line)}
+
+/* Atelier (analyse technologique) */
+.atelier{z-index:4;background:#1b2230;align-items:stretch;justify-content:stretch;padding:0;font-family:var(--f-body)}
+.at-grid{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:0;width:100%;height:100%}
+.at-left{position:relative;background:
+  linear-gradient(#ffffff0a 1px,transparent 1px) 0 0/24px 24px,
+  linear-gradient(90deg,#ffffff0a 1px,transparent 1px) 0 0/24px 24px,#16324f;border-right:3px solid #0d1b2b;min-width:0}
+.at-left canvas{position:absolute;inset:0;width:100%;height:100%}
+.at-tag{position:absolute;left:10px;top:44px;font-family:var(--f-display);font-size:clamp(10px,1.3vw,13px);color:#bfe3ff;background:#0d1b2bcc;padding:3px 8px;border-radius:3px}
+.at-right{display:flex;flex-direction:column;gap:10px;padding:clamp(10px,2vw,20px);padding-top:clamp(40px,6vw,56px);overflow:auto;background:#eae4d3;color:#1e2633;min-width:0}
+.at-right h3{font-family:var(--f-display);margin:0;font-size:clamp(14px,2vw,20px);color:#16324f}
+.at-right .step{font-family:var(--f-display);font-size:12px;letter-spacing:.08em;color:#9b5b00;text-transform:uppercase}
+.at-right p{margin:0;line-height:1.4;font-size:clamp(12.5px,1.55vw,15px)}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{font-family:var(--f-body);font-size:clamp(12px,1.45vw,14.5px);background:#fff;color:#1e2633;border:2px solid #b8ad92;border-radius:999px;padding:5px 12px}
+.chip:hover{border-color:#16324f}
+.chip.on{background:#16324f;color:#fff;border-color:#16324f}
+.chip.right{background:#1f7a4d;color:#fff;border-color:#1f7a4d}
+.chip.wrong{background:#b5323f;color:#fff;border-color:#b5323f}
+.pair{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.feedback{font-size:clamp(12px,1.5vw,14.5px);padding:6px 10px;border-radius:4px;background:#fff8;border-left:4px solid #1f7a4d;line-height:1.4}
+.feedback.bad{border-left-color:#b5323f}
+.ratio{font-family:var(--f-display);font-size:clamp(16px,2.4vw,24px);color:#16324f}
+.at-right .btn{align-self:flex-start;background:#16324f;color:#fff;border-color:#0d1b2b}
+
+/* Messages / end screens */
+.banner{flex-direction:column;gap:12px;text-align:center;background:#000a}
+.banner h2{font-family:var(--f-display);font-size:clamp(22px,4.5vw,46px);margin:0;text-shadow:4px 4px 0 #000}
+.banner p{margin:0;max-width:52ch;font-size:clamp(13px,1.8vw,17px);line-height:1.4}
+
+/* Touch pad */
+.pad{display:none;justify-content:space-between;gap:12px;user-select:none;-webkit-user-select:none;touch-action:none}
+.pad .g{display:flex;gap:10px}
+.pad button{width:64px;height:56px;font-size:22px;background:var(--panel);color:var(--ink);border:2px solid var(--line);border-radius:10px}
+.pad button.act{width:86px;background:var(--coin);color:#2a1c00;border-color:#b98a10}
+.pad button.on{filter:brightness(1.4)}
+@media (pointer:coarse){ .pad{display:flex} }
+.help{color:var(--dim);font-size:13px;display:flex;gap:18px;flex-wrap:wrap;margin:0}
+.help kbd{font-family:var(--f-display);background:var(--panel);border:1px solid var(--line);border-bottom-width:3px;border-radius:3px;padding:0 6px;color:var(--ink)}
+
+@media (max-width:760px){
+  .worlds{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .portal .mode{display:none}
+  .opts{grid-template-columns:1fr}
+  .at-grid{grid-template-columns:1fr;grid-template-rows:42% 58%}
+  .at-left{border-right:0;border-bottom:3px solid #0d1b2b}
+  .at-right{padding-top:10px}
+}
+@media (max-width:520px){ .worlds{grid-template-columns:repeat(2,minmax(0,1fr))} .portal canvas{display:none} }
+@media (prefers-reduced-motion:reduce){ .portal{transition:none} }
+</style>
+<style>:root{padding:env(safe-area-inset-top,0) 0 env(safe-area-inset-bottom,0)}body{margin:0;font-family:system-ui,sans-serif}img{max-width:100%}[hidden]{display:none!important}</style>
+</head>
+<body>
+
+
+<div class="wrap">
+  <header class="top">
+    <h1>Odyssée <span>ST 4</span></h1>
+    <p>Science et technologie · 4<sup>e</sup> secondaire · révision en 5 mondes</p>
+  </header>
+
+  <div class="stage" id="stage">
+    <canvas id="cv" width="960" height="540" aria-label="Écran de jeu"></canvas>
+
+    <div class="hud" id="hud" hidden>
+      <div class="grp"><span id="hudWorld">—</span><span class="hearts" id="hudHearts">♥♥♥</span></div>
+      <div class="grp"><span id="hudScore">✦ 0</span><button class="btn pause" id="btnQuit" type="button">Carte</button></div>
+    </div>
+
+    <div class="ov menu" id="menu">
+      <h2>Choisis ton monde</h2>
+      <p class="sub">Chaque monde se joue autrement. Les bonnes réponses débloquent les fiches du Carnet de notions.</p>
+      <div class="worlds" id="worlds"></div>
+      <div class="row">
+        <button class="btn gold" id="btnCodex" type="button">Carnet de notions</button>
+        <button class="btn" id="btnSound" type="button">Son : activé</button>
+      </div>
+    </div>
+
+    <div class="ov" id="quiz" hidden><div class="card" id="quizCard"></div></div>
+    <div class="ov codex" id="codex" hidden></div>
+    <div class="ov atelier" id="atelier" hidden></div>
+    <div class="ov banner" id="banner" hidden></div>
+  </div>
+
+  <div class="pad" id="pad">
+    <div class="g"><button type="button" data-k="left" aria-label="Gauche">◀</button><button type="button" data-k="right" aria-label="Droite">▶</button></div>
+    <div class="g"><button type="button" data-k="up" aria-label="Haut">▲</button><button type="button" data-k="down" aria-label="Bas">▼</button><button type="button" class="act" data-k="jump" aria-label="Saut">SAUT</button></div>
+  </div>
+
+  <p class="help"><span><kbd>←</kbd> <kbd>→</kbd> bouger</span><span><kbd>Espace</kbd> / <kbd>↑</kbd> sauter (double saut au monde 2)</span><span><kbd>↑</kbd><kbd>↓</kbd> nager au monde 3</span><span><kbd>1</kbd>–<kbd>4</kbd> répondre</span><span><kbd>Échap</kbd> retour à la carte</span></p>
+</div>
+<script>
+// ================= DONNÉES =================
+const WORLDS = [
+  {id:"mat",   no:"Monde 1", name:"Labo de la Matière",     mode:"Plateformes : frappe les blocs ? par en dessous, saute sur les ions.", bg:"#2b5d8a", edge:"#8fd3ff", ink:"#f2fbff", col:"#8fd3ff"},
+  {id:"elec",  no:"Monde 2", name:"Centrale Ampère",        mode:"Course rapide : attrape l'anneau de la bonne réponse. Double saut !", bg:"#3a2a00", edge:"#ffc93c", ink:"#fff6dc", col:"#ffc93c"},
+  {id:"terre", no:"Monde 3", name:"Sonde Terre & Espace",   mode:"Plongée libre : de l'espace jusqu'au sol, touche la bonne bulle.", bg:"#103d3a", edge:"#5ee6c8", ink:"#e8fffa", col:"#5ee6c8"},
+  {id:"viv",   no:"Monde 4", name:"Forêt trophique",        mode:"Combat RPG au tour par tour contre les menaces de l'écosystème.", bg:"#2f3a12", edge:"#b6e36a", ink:"#f6ffe4", col:"#b6e36a"},
+  {id:"tech",  no:"Monde 5", name:"Atelier d'analyse",      mode:"Analyse technologique : mécanismes, rapports de vitesse et fiche d'un étau.", bg:"#4a2412", edge:"#ff9a52", ink:"#fff1e6", col:"#ff9a52"}
+];
+
+// q : question · o : choix · a : index de la bonne réponse · e : explication · c : fiche du carnet
+const Q = {
+mat:[
+ {q:"Selon le modèle de Rutherford-Bohr, combien d'électrons le sodium (Z = 11) a-t-il sur sa dernière couche ?",o:["1","2","8","11"],a:0,e:"Répartition 2 – 8 – 1 : il reste 1 électron de valence. C'est pourquoi le sodium est dans le groupe I (alcalins).",c:"atome"},
+ {q:"Dans le tableau périodique, que nous indique le numéro de la période d'un élément ?",o:["Le nombre d'électrons de valence","Le nombre de couches électroniques","Le nombre de neutrons","Sa masse atomique"],a:1,e:"Période = nombre de couches électroniques. Groupe = nombre d'électrons de valence.",c:"tableau"},
+ {q:"Combien de points dessine-t-on autour du symbole C dans la notation de Lewis du carbone ?",o:["2","4","6","12"],a:1,e:"Le carbone (groupe IV) a 4 électrons de valence, donc 4 points.",c:"atome"},
+ {q:"Le chlore gagne un électron pour compléter sa dernière couche. Quel ion forme-t-il ?",o:["Cl⁺","Cl²⁻","Cl⁻","Cl⁷⁺"],a:2,e:"Gagner un électron (négatif) donne une charge de 1−, soit l'ion Cl⁻.",c:"tableau"},
+ {q:"On dissout 15 g de sel dans 500 mL d'eau. Quelle est la concentration ?",o:["7,5 g/L","15 g/L","30 g/L","0,03 g/L"],a:2,e:"C = m / V = 15 g ÷ 0,500 L = 30 g/L.",c:"solutions"},
+ {q:"Un lac contient 0,004 g de mercure par litre d'eau (1 L ≈ 1 000 000 mg). Quelle est la concentration en ppm ?",o:["0,004 ppm","4 ppm","40 ppm","4000 ppm"],a:1,e:"0,004 g = 4 mg. 4 mg dans 1 000 000 mg d'eau, c'est 4 ppm (4 mg/L).",c:"solutions"},
+ {q:"Laquelle de ces substances est un électrolyte une fois dissoute dans l'eau ?",o:["Le sucre","L'éthanol","Le sel de table (NaCl)","L'eau distillée"],a:2,e:"NaCl se dissocie en ions Na⁺ et Cl⁻ qui permettent le passage du courant électrique.",c:"solutions"},
+ {q:"Une solution a un pH de 2. Elle est…",o:["Basique","Neutre","Acide","Impossible à classer"],a:2,e:"pH < 7 : acide. pH = 7 : neutre. pH > 7 : basique.",c:"ph"},
+ {q:"Que produit une réaction de neutralisation acidobasique ?",o:["Un sel et de l'eau","Un acide plus fort","Du CO₂ et de l'énergie","Un métal et un gaz"],a:0,e:"Acide + base → sel + eau. Ex. : HCl + NaOH → NaCl + H₂O.",c:"ph"},
+ {q:"12 g de carbone réagissent complètement avec 32 g de dioxygène. Quelle masse de CO₂ obtient-on ?",o:["20 g","32 g","44 g","12 g"],a:2,e:"Loi de la conservation de la masse : masse des réactifs = masse des produits. 12 + 32 = 44 g.",c:"transfo"},
+ {q:"Quels coefficients balancent l'équation : __ H₂ + __ O₂ → __ H₂O ?",o:["1, 1, 1","2, 1, 2","1, 2, 2","2, 2, 1"],a:1,e:"2 H₂ + O₂ → 2 H₂O : 4 H et 2 O de chaque côté.",c:"transfo"},
+ {q:"Quels sont les trois éléments du triangle de feu ?",o:["Combustible, comburant, point d'ignition","Bois, eau, oxygène","Chaleur, lumière, fumée","Carbone, azote, hydrogène"],a:0,e:"Sans combustible, sans comburant (souvent O₂) ou sans atteindre le point d'ignition, pas de combustion.",c:"transfo"},
+ {q:"Quels sont les produits de la photosynthèse ?",o:["CO₂ et H₂O","Glucose et O₂","Glucose et CO₂","O₂ et H₂O"],a:1,e:"6 CO₂ + 6 H₂O + énergie lumineuse → C₆H₁₂O₆ + 6 O₂. La respiration cellulaire fait l'inverse.",c:"photo"},
+ {q:"Quels sont les réactifs de la respiration cellulaire ?",o:["Glucose et O₂","CO₂ et H₂O","Lumière et CO₂","Glucose et CO₂"],a:0,e:"C₆H₁₂O₆ + 6 O₂ → 6 CO₂ + 6 H₂O + énergie. Elle se produit dans les cellules de presque tous les êtres vivants.",c:"photo"},
+ {q:"Une bûche brûle complètement et il ne reste qu'un peu de cendre. La masse a-t-elle disparu ?",o:["Oui, la combustion détruit la matière","Non, elle se retrouve surtout dans les gaz produits (CO₂, vapeur d'eau)","Oui, elle se transforme en énergie","Non, elle reste entièrement dans la cendre"],a:1,e:"Loi de la conservation de la masse : les atomes se réarrangent. En système fermé, la masse des produits égale celle des réactifs.",c:"transfo"},
+],
+elec:[
+ {q:"Un grille-pain branché sur 120 V a une résistance de 12 Ω. Quelle intensité le traverse ?",o:["0,1 A","10 A","1440 A","132 A"],a:1,e:"Loi d'Ohm : I = U / R = 120 V ÷ 12 Ω = 10 A.",c:"ohm"},
+ {q:"Deux ampoules sont branchées en série. L'une grille. Que se passe-t-il ?",o:["L'autre brille plus fort","L'autre s'éteint aussi","L'autre reste allumée normalement","Le circuit prend feu"],a:1,e:"En série, il n'y a qu'un seul chemin pour le courant : si un élément brise le circuit, plus rien ne fonctionne.",c:"circuits"},
+ {q:"Pourquoi les prises d'une maison sont-elles branchées en parallèle ?",o:["Pour que chaque appareil fonctionne même si un autre est éteint","Pour réduire la tension","Pour économiser du fil","Pour que tous s'éteignent ensemble"],a:0,e:"En parallèle, chaque branche est un chemin distinct : on peut ouvrir une branche sans couper les autres.",c:"circuits"},
+ {q:"Comment branche-t-on un ampèremètre pour mesurer l'intensité du courant ?",o:["En série","En parallèle","Hors du circuit","À la place de la pile"],a:0,e:"L'ampèremètre se branche en série (le courant doit le traverser) ; le voltmètre se branche en parallèle aux bornes de l'élément.",c:"ohm"},
+ {q:"Une bouilloire fonctionne sous 120 V avec un courant de 10 A. Quelle est sa puissance ?",o:["12 W","130 W","1200 W","0,083 W"],a:2,e:"P = U × I = 120 V × 10 A = 1200 W.",c:"puissance"},
+ {q:"Un radiateur de 1500 W fonctionne pendant 2 h. Quelle énergie consomme-t-il ?",o:["750 kWh","3 kWh","1,5 kWh","3000 kWh"],a:1,e:"E = P × Δt = 1,5 kW × 2 h = 3 kWh (ou 1500 W × 7200 s = 10 800 000 J).",c:"puissance"},
+ {q:"On frotte un ballon sur ses cheveux et il se charge négativement. Que s'est-il passé ?",o:["Des protons sont passés au ballon","Des électrons sont passés des cheveux au ballon","Le ballon a perdu des électrons","Des neutrons ont été créés"],a:1,e:"En électricité statique, seuls les électrons se déplacent. Le ballon en gagne : il devient négatif.",c:"statique"},
+ {q:"Deux objets chargés négativement sont placés l'un près de l'autre. Ils…",o:["S'attirent","Se repoussent","Ne réagissent pas","Deviennent neutres"],a:1,e:"Charges de même signe : répulsion. Charges de signes contraires : attraction.",c:"statique"},
+ {q:"Selon la règle de la main droite pour un fil, que représente le pouce ?",o:["Le sens du champ magnétique","Le sens du courant","Le pôle nord","La force"],a:1,e:"Pouce = sens du courant ; les doigts qui s'enroulent montrent le sens des lignes de champ autour du fil.",c:"magnet"},
+ {q:"Quelle modification rend un électroaimant (solénoïde) PLUS puissant ?",o:["Diminuer le nombre de spires","Diminuer le courant","Ajouter un noyau de fer","Retirer la pile"],a:2,e:"Plus de spires, plus de courant, ou un noyau ferromagnétique (fer) augmentent le champ du solénoïde.",c:"magnet"},
+ {q:"Une ampoule reçoit 100 J d'énergie électrique et émet 15 J de lumière. Quel est son rendement ?",o:["15 %","85 %","115 %","6,7 %"],a:0,e:"Rendement = énergie utile ÷ énergie consommée × 100 = 15 ÷ 100 × 100 = 15 %. Le reste devient chaleur.",c:"energie"},
+ {q:"Que dit la loi de la conservation de l'énergie ?",o:["L'énergie se perd avec le temps","L'énergie ne peut être ni créée ni détruite, seulement transformée","Toute énergie finit en électricité","L'énergie se crée par le mouvement"],a:1,e:"L'énergie se transforme ou se transfère ; la quantité totale reste la même.",c:"energie"},
+ {q:"Quelle phrase décrit la TEMPÉRATURE (et non la chaleur) ?",o:["Un transfert d'énergie entre deux milieux","La mesure du degré d'agitation des particules","Une quantité en joules qui passe du chaud au froid","Une forme d'énergie électrique"],a:1,e:"Température : degré d'agitation des particules (°C). Chaleur : transfert d'énergie thermique du milieu chaud vers le milieu froid.",c:"energie"},
+ {q:"Deux aimants : le pôle nord de l'un approche le pôle sud de l'autre. Ils…",o:["Se repoussent","S'attirent","Tournent sur eux-mêmes","Perdent leur magnétisme"],a:1,e:"Pôles contraires s'attirent, pôles semblables se repoussent. Les lignes de champ vont du N vers le S à l'extérieur de l'aimant.",c:"magnet"}
+],
+terre:[
+ // espace
+ {z:0,q:"Quelle est la principale cause des marées sur Terre ?",o:["Les vents dominants","L'attraction gravitationnelle de la Lune","La rotation du Soleil","Les séismes"],a:1,e:"La Lune (et dans une moindre mesure le Soleil) attire les masses d'eau : environ deux marées hautes par jour.",c:"espace"},
+ {z:0,q:"Quelle partie de l'énergie solaire réchauffe la Terre et alimente la photosynthèse ?",o:["Seulement les rayons X","Le rayonnement émis par le Soleil (surtout lumière visible et infrarouge)","Le vent solaire uniquement","La gravité du Soleil"],a:1,e:"Le Soleil émet un flux d'énergie, surtout sous forme de lumière visible et d'infrarouge, qui chauffe la Terre et nourrit les producteurs.",c:"espace"},
+ // atmosphère
+ {z:1,q:"Que fait l'effet de serre ?",o:["Il détruit la couche d'ozone","Des gaz retiennent une partie de la chaleur émise par la Terre","Il bloque toute la lumière du Soleil","Il cause les marées"],a:1,e:"CO₂, CH₄, vapeur d'eau… absorbent l'infrarouge émis par la Terre. Naturel et utile, mais amplifié par les activités humaines.",c:"atmo"},
+ {z:1,q:"Une dépression (cyclone) est associée à…",o:["Une haute pression et du beau temps","Une basse pression, des nuages et des précipitations","Aucun vent","Une masse d'air très sèche immobile"],a:1,e:"Cyclone : basse pression, l'air monte, nuages et précipitations. Anticyclone : haute pression, temps dégagé.",c:"atmo"},
+ {z:1,q:"Qu'est-ce qu'une masse d'air ?",o:["Un nuage très dense","Un grand volume d'air de température et d'humidité assez uniformes","Le vent d'une tempête","La couche d'ozone"],a:1,e:"Une masse d'air prend les caractéristiques de la région où elle se forme. Sa rencontre avec une autre forme un front.",c:"atmo"},
+ {z:1,q:"Quels facteurs déterminent surtout la répartition des biomes terrestres ?",o:["La température et les précipitations","La couleur du sol","Le nombre d'habitants","La présence de volcans"],a:0,e:"Le climat (température, précipitations), lui-même influencé par la latitude, l'altitude et les courants, détermine les biomes.",c:"biomes"},
+ {z:1,q:"Brûler des combustibles fossiles a quel effet sur le cycle du carbone ?",o:["Retire du CO₂ de l'air","Ajoute du CO₂ dans l'atmosphère","Transforme le CO₂ en azote","Aucun effet"],a:1,e:"Le carbone stocké depuis des millions d'années est rejeté sous forme de CO₂, ce qui augmente l'effet de serre.",c:"cycles"},
+ // hydrosphère
+ {z:2,q:"Qu'est-ce qu'un bassin versant ?",o:["Un lac artificiel","Un territoire dont toutes les eaux s'écoulent vers un même cours d'eau ou plan d'eau","Une zone de la mer très profonde","Un barrage"],a:1,e:"Les lignes de partage des eaux (crêtes) délimitent le bassin. Un polluant en amont peut atteindre tout l'aval.",c:"hydro"},
+ {z:2,q:"Quelle est la différence entre un glacier et la banquise ?",o:["Aucune","Le glacier est de l'eau douce sur la terre ferme ; la banquise est de l'eau de mer gelée","La banquise est sur les montagnes","Le glacier flotte sur l'océan"],a:1,e:"La fonte des glaciers fait monter le niveau de la mer ; celle de la banquise, beaucoup moins (elle flotte déjà).",c:"hydro"},
+ {z:2,q:"La circulation océanique profonde (thermohaline) dépend surtout de…",o:["La température et la salinité de l'eau","La couleur de l'eau","Les marées seulement","Les poissons"],a:0,e:"Une eau froide et salée est plus dense : elle plonge et met en mouvement les courants profonds. Les courants de surface dépendent surtout des vents.",c:"hydro"},
+ {z:2,q:"Quelle ressource énergétique provient de l'hydrosphère ?",o:["Le pétrole des sables bitumineux","L'hydroélectricité","Le charbon","L'énergie éolienne"],a:1,e:"Hydroélectricité, énergie marémotrice et énergie des vagues proviennent de l'hydrosphère.",c:"hydro"},
+ // lithosphère
+ {z:3,q:"Quel est l'ordre des horizons d'un sol, de la surface vers le bas ?",o:["C, B, A, O","O, A, B, C","A, O, C, B","B, C, O, A"],a:1,e:"O : litière (matière organique) · A : terre arable · B : sous-sol (accumulation) · C : roche mère fragmentée.",c:"litho"},
+ {z:3,q:"Qu'est-ce que le pergélisol ?",o:["Un sol gelé en permanence depuis au moins 2 ans","Un sol très fertile","Une roche volcanique","La couche de neige de l'hiver"],a:0,e:"Son dégel, causé par le réchauffement, libère des gaz à effet de serre et rend les sols instables.",c:"litho"},
+ {z:3,q:"Que désigne la capacité tampon d'un sol ?",o:["Sa capacité à absorber l'eau","Sa capacité à neutraliser les acides et à garder un pH stable","Sa dureté","Sa couleur"],a:1,e:"Un sol à bonne capacité tampon résiste mieux aux précipitations acides.",c:"litho"},
+ {z:3,q:"Quel rôle jouent certaines bactéries du sol dans le cycle de l'azote ?",o:["Elles détruisent l'azote","Elles fixent l'azote de l'air (N₂) en composés utilisables par les plantes","Elles produisent du CO₂ seulement","Aucun rôle"],a:1,e:"Les plantes ne peuvent pas utiliser le N₂ directement : des bactéries le transforment (ammonium, nitrates).",c:"cycles"},
+ {z:3,q:"Pour identifier un minéral, quelle propriété correspond à la couleur de sa poudre ?",o:["L'éclat","La dureté","La trace","La transparence"],a:2,e:"On frotte le minéral sur une plaque de porcelaine : la couleur de la trace peut différer de celle du minéral.",c:"litho"}
+],
+viv:[
+ {q:"On compte 120 cerfs sur un territoire de 40 km². Quelle est la densité de la population ?",o:["4800 cerfs/km²","3 cerfs/km²","0,33 cerf/km²","160 cerfs/km²"],a:1,e:"Densité = nombre d'individus ÷ superficie = 120 ÷ 40 = 3 cerfs/km².",c:"pop"},
+ {q:"Les populations de lièvres et de lynx augmentent puis diminuent en alternance. C'est un exemple…",o:["De cycle biologique de population","D'empreinte écologique","De bioaccumulation","De photosynthèse"],a:0,e:"Plus de lièvres → plus de lynx → moins de lièvres → moins de lynx… Les facteurs limitants régulent les populations.",c:"pop"},
+ {q:"Lequel est un facteur qui peut limiter la croissance d'une population ?",o:["La disponibilité de la nourriture","Le nombre de lettres dans son nom","La couleur du ciel","Le numéro atomique"],a:0,e:"Nourriture, espace, prédation, maladies, climat… sont des facteurs limitants.",c:"pop"},
+ {q:"Qu'est-ce que la biodiversité d'une communauté ?",o:["Le nombre d'individus d'une espèce","Le nombre d'espèces et leur abondance relative","La masse totale des plantes","La température moyenne"],a:1,e:"Une communauté riche en espèces, bien réparties, est plus résiliente face aux perturbations.",c:"commu"},
+ {q:"Lequel est une perturbation d'origine humaine ?",o:["Un feu causé par la foudre","Une coupe à blanc","Une épidémie d'insectes naturelle","Une inondation printanière"],a:1,e:"Les perturbations peuvent être naturelles ou humaines ; elles modifient la composition de la communauté.",c:"commu"},
+ {q:"Dans un réseau trophique, quel est le rôle des décomposeurs ?",o:["Produire de la matière organique par photosynthèse","Transformer la matière organique morte en matière inorganique","Chasser les herbivores","Absorber le CO₂"],a:1,e:"C'est le recyclage chimique : les éléments retournent au sol et redeviennent disponibles pour les producteurs.",c:"ecosys"},
+ {q:"Pourquoi y a-t-il moins d'énergie disponible à chaque niveau trophique supérieur ?",o:["L'énergie est détruite","Une grande partie est utilisée pour vivre et perdue sous forme de chaleur","Les prédateurs mangent moins","Les plantes la gardent"],a:1,e:"Le flux d'énergie est à sens unique et diminue d'un niveau à l'autre ; la matière, elle, est recyclée.",c:"ecosys"},
+ {q:"Qu'est-ce que la productivité primaire d'un écosystème ?",o:["La quantité de matière organique produite par les producteurs dans un temps et un espace donnés","Le nombre de prédateurs","La quantité d'eau d'un lac","La vitesse des décomposeurs"],a:0,e:"Elle dépend de la lumière, de la température, de l'eau et des nutriments disponibles.",c:"ecosys"},
+ {q:"Que mesure l'empreinte écologique ?",o:["La taille du pied d'un animal","La surface de terre et d'eau nécessaire pour produire ce qu'une personne consomme et absorber ses déchets","Le nombre d'arbres d'une forêt","La quantité de CO₂ d'un volcan"],a:1,e:"Elle s'exprime en hectares globaux par personne et permet de comparer modes de vie et pays.",c:"empreinte"},
+ {q:"Le mercure est plus concentré chez le brochet que chez le plancton. Pourquoi ?",o:["Le brochet le fabrique","La concentration du contaminant augmente d'un niveau trophique à l'autre","Le plancton l'élimine dans l'eau du brochet","C'est le hasard"],a:1,e:"Le contaminant s'accumule dans chaque organisme (bioaccumulation) et se concentre en remontant la chaîne alimentaire (bioconcentration).",c:"toxico"},
+ {q:"Qu'est-ce que le seuil de toxicité d'un contaminant ?",o:["La concentration minimale qui produit un effet néfaste observable","La dose qui tue tous les organismes","La concentration maximale permise dans un aliment","La couleur du contaminant"],a:0,e:"Sous ce seuil, aucun effet néfaste n'est observé chez l'organisme exposé.",c:"toxico"},
+ {q:"Un contaminant, c'est…",o:["Un agent qui cause des changements nuisibles dans un milieu ou un organisme","Uniquement un produit chimique industriel","Un décomposeur","Un nutriment essentiel"],a:0,e:"Il peut être chimique, biologique (bactérie) ou physique (chaleur, radiation).",c:"toxico"}
+]
+};
+
+const CODEX = {
+mat:[
+ {id:"atome",t:"Modèle de Rutherford-Bohr & Lewis",h:"Noyau (protons + neutrons) entouré de couches d'électrons : 2, 8, 8… Z = nombre de protons = nombre d'électrons (atome neutre). La <b>notation de Lewis</b> ne montre que les électrons de valence en points autour du symbole."},
+ {id:"tableau",t:"Tableau périodique & ions",h:"<b>Groupe</b> = nombre d'électrons de valence. <b>Période</b> = nombre de couches. Métaux à gauche, non-métaux à droite. Un atome gagne ou perd des électrons pour ressembler au gaz rare le plus proche et devient un <b>ion</b> : Na⁺, Mg²⁺, Cl⁻, O²⁻."},
+ {id:"solutions",t:"Concentration & électrolytes",h:"<span class='f'>C = m / V</span> en g/L. Aussi en %, ou en <b>ppm</b> (1 ppm ≈ 1 mg/L). Électrolyte : substance qui se dissocie en ions dans l'eau et conduit le courant (acides, bases, sels). Le sucre ne l'est pas."},
+ {id:"ph",t:"Échelle pH & neutralisation",h:"pH 0–14. <b>Acide</b> &lt; 7 &lt; <b>basique</b>, 7 = neutre. Le papier tournesol bleu rougit en milieu acide. Neutralisation : <span class='f'>acide + base → sel + eau</span>."},
+ {id:"transfo",t:"Conservation de la masse & combustion",h:"Masse des réactifs = masse des produits : les atomes se réarrangent, aucun ne disparaît. On <b>balance</b> l'équation avec des coefficients. <b>Combustion</b> : il faut un combustible, un comburant (souvent O₂) et atteindre le point d'ignition (triangle de feu)."},
+ {id:"photo",t:"Photosynthèse & respiration cellulaire",h:"Photosynthèse : <span class='f'>6CO₂ + 6H₂O + lumière → C₆H₁₂O₆ + 6O₂</span>. Respiration cellulaire : <span class='f'>C₆H₁₂O₆ + 6O₂ → 6CO₂ + 6H₂O + énergie</span>. Les deux réactions sont inverses l'une de l'autre."}
+],
+elec:[
+ {id:"statique",t:"Charge & électricité statique",h:"Seuls les électrons se déplacent. Gain d'électrons → charge négative ; perte → positive. Même signe : répulsion ; signes contraires : attraction. Charger par frottement, conduction ou induction."},
+ {id:"ohm",t:"Loi d'Ohm",h:"<span class='f'>U = R × I</span> · U en volts (V), R en ohms (Ω), I en ampères (A). Ampèremètre en série, voltmètre en parallèle."},
+ {id:"circuits",t:"Circuits série et parallèle",h:"<b>Série</b> : un seul chemin pour le courant ; si un élément brise le circuit, tout s'arrête. <b>Parallèle</b> : plusieurs branches ; chaque élément fonctionne indépendamment (installations d'une maison). Symboles : pile, ampoule, résistor, interrupteur, fil."},
+ {id:"puissance",t:"Puissance et énergie électriques",h:"<span class='f'>P = U × I</span> (watts). <span class='f'>E = P × Δt</span> : en joules (W × s) ou en kWh (kW × h). 1 kWh = 3 600 000 J."},
+ {id:"magnet",t:"Magnétisme & électromagnétisme",h:"Pôles contraires s'attirent. Un fil parcouru par un courant crée un champ magnétique circulaire (main droite : pouce = courant). Un <b>solénoïde</b> agit comme un aimant ; plus de spires, plus de courant ou un noyau de fer = champ plus fort."},
+ {id:"energie",t:"Énergie, rendement, chaleur",h:"Conservation : l'énergie se transforme sans se perdre. <span class='f'>Rendement = énergie utile ÷ énergie consommée × 100</span>. Température : agitation des particules. Chaleur : transfert d'énergie thermique du chaud vers le froid."}
+],
+terre:[
+ {id:"cycles",t:"Cycles biogéochimiques",h:"<b>Carbone</b> : photosynthèse (capte CO₂), respiration et combustion (rejettent CO₂), stockage dans les océans et les combustibles fossiles. <b>Azote</b> : fixation du N₂ par des bactéries, absorption par les plantes, retour au sol par les décomposeurs."},
+ {id:"atmo",t:"Atmosphère",h:"Effet de serre (CO₂, CH₄, H₂O). Circulation atmosphérique : vents dominants. <b>Masses d'air</b> et fronts. <b>Cyclone</b> = basse pression, mauvais temps ; <b>anticyclone</b> = haute pression, beau temps. Ressource : énergie éolienne."},
+ {id:"hydro",t:"Hydrosphère",h:"<b>Bassin versant</b> délimité par les lignes de partage des eaux. Circulation océanique : surface (vents), profondeur (température + salinité). Glacier (eau douce sur terre) ≠ banquise (eau de mer gelée). Ressources : hydroélectricité, marémotrice."},
+ {id:"litho",t:"Lithosphère & sols",h:"Minéraux : dureté, trace, éclat, couleur. Horizons <b>O-A-B-C</b>. <b>Pergélisol</b> : gelé ≥ 2 ans. <b>Capacité tampon</b> : neutraliser l'acidité. Ressources : combustibles fossiles, géothermie."},
+ {id:"biomes",t:"Régions climatiques & biomes",h:"La température et les précipitations (influencées par latitude, altitude, courants) déterminent les biomes : toundra, forêt boréale, forêt tempérée, prairie, désert, forêt tropicale ; biomes aquatiques d'eau douce et marins."},
+ {id:"espace",t:"Soleil & système Terre-Lune",h:"Le Soleil émet un flux d'énergie (lumière visible, infrarouge, UV) qui chauffe la Terre et alimente la vie. La gravité de la Lune cause les <b>marées</b> (environ 2 marées hautes par jour)."}
+],
+viv:[
+ {id:"pop",t:"Étude des populations",h:"<span class='f'>Densité = nombre d'individus ÷ superficie</span>. Facteurs limitants : nourriture, prédation, maladies, espace. <b>Cycles biologiques</b> : les effectifs fluctuent (proie-prédateur)."},
+ {id:"commu",t:"Dynamique des communautés",h:"<b>Biodiversité</b> : nombre d'espèces et abondance relative. <b>Perturbations</b> naturelles (feu, insectes) ou humaines (coupe, pollution), qui modifient la communauté."},
+ {id:"ecosys",t:"Dynamique des écosystèmes",h:"Producteurs → consommateurs → décomposeurs. <b>Productivité primaire</b> : matière organique produite par les producteurs. L'énergie circule à sens unique et diminue ; la matière est <b>recyclée</b> (recyclage chimique)."},
+ {id:"empreinte",t:"Empreinte écologique",h:"Surface terrestre et aquatique nécessaire pour fournir ce qu'une population consomme et absorber ses déchets (hectares globaux par personne)."},
+ {id:"toxico",t:"Écotoxicologie",h:"<b>Contaminant</b> : agent qui cause des effets nuisibles. <b>Seuil de toxicité</b> : plus petite concentration qui produit un effet néfaste. <b>Bioaccumulation</b> dans l'organisme, <b>bioconcentration</b> le long de la chaîne alimentaire."}
+],
+tech:[
+ {id:"liaison",t:"Liaisons mécaniques",h:"4 caractéristiques : <b>directe / indirecte</b> (organe de liaison ?), <b>rigide / élastique</b>, <b>démontable / indémontable</b>, <b>totale / partielle</b> (mouvement possible ?). Guidage : en rotation, en translation ou hélicoïdal."},
+ {id:"transmission",t:"Systèmes de transmission",h:"Même mouvement de rotation transmis : engrenage, roues de friction, poulies-courroie, chaîne et roues dentées, roue dentée et vis sans fin. Sens : roues en contact direct tournent en sens inverse ; avec courroie ou chaîne, même sens."},
+ {id:"vitesse",t:"Changements de vitesse",h:"<span class='f'>Rapport = dents menante ÷ dents menée</span>. Menante plus grande que la menée → la menée tourne plus vite (augmentation). Menante plus petite → diminution de vitesse, mais plus de force."},
+ {id:"transformation",t:"Systèmes de transformation",h:"Rotation ↔ translation : pignon et crémaillère (réversible), vis et écrou, came et tige-poussoir, bielle et manivelle (réversible), excentrique."},
+ {id:"contraintes",t:"Contraintes & matériaux",h:"Traction, compression, torsion, flexion, cisaillement. Matériaux : bois, métaux et alliages (ferreux / non ferreux), plastiques (thermoplastiques / thermodurcissables), céramiques, composites. Protection contre la corrosion : peinture, galvanisation."},
+ {id:"analyse",t:"Démarche d'analyse technologique",h:"1. Fonction globale de l'objet. 2. Identifier les composants et leur fonction mécanique (liaison, guidage…). 3. Systèmes de transmission/transformation. 4. Contraintes subies. 5. Choix des matériaux. Langage des lignes : projections, cotation, schémas de principe."}
+]
+};
+
+// ================= QUESTIONS SUPPLÉMENTAIRES (Terre & espace) =================
+Q.terre.push(
+ {z:0,q:"Environ combien de marées hautes observe-t-on chaque jour à un même endroit sur la côte ?",o:["1","2","4","Aucune"],a:1,e:"La Terre tourne sous deux renflements d'eau causés par la Lune : environ 2 marées hautes et 2 marées basses par jour.",c:"espace"},
+ {z:0,q:"Quelle est la principale source d'énergie qui alimente le climat et les vents sur Terre ?",o:["Le noyau terrestre","Le Soleil","La Lune","Les volcans"],a:1,e:"Le flux d'énergie solaire réchauffe inégalement la Terre, ce qui met l'air et l'eau en mouvement.",c:"espace"},
+ {z:1,q:"Un anticyclone est associé à…",o:["Une haute pression et un temps généralement dégagé","Une basse pression et de la pluie","Des marées plus fortes","Un tremblement de terre"],a:0,e:"Dans un anticyclone, l'air descend et se réchauffe : peu de nuages se forment.",c:"atmo"},
+ {z:1,q:"Quelle ressource énergétique provient de l'atmosphère ?",o:["L'énergie éolienne","Le charbon","L'hydroélectricité","La géothermie"],a:0,e:"Le vent, causé par les différences de pression, fait tourner les éoliennes.",c:"atmo"},
+ {z:2,q:"D'où provient l'énergie marémotrice ?",o:["Du mouvement des marées","Du vent solaire","De la chaleur du sol","Du pétrole sous-marin"],a:0,e:"Des turbines captent l'énergie de l'eau qui monte et descend avec les marées.",c:"hydro"},
+ {z:2,q:"Les courants océaniques de surface sont surtout causés par…",o:["Les vents dominants","Les volcans sous-marins","Les poissons migrateurs","La Lune uniquement"],a:0,e:"Les vents entraînent les eaux de surface ; les courants profonds dépendent plutôt de la température et de la salinité.",c:"hydro"},
+ {z:3,q:"Quelle ressource énergétique provient de la chaleur interne de la lithosphère ?",o:["La géothermie","L'énergie éolienne","L'énergie marémotrice","L'énergie solaire"],a:0,e:"La géothermie utilise la chaleur du sous-sol pour chauffer des bâtiments ou produire de l'électricité.",c:"litho"},
+ {z:3,q:"Dans quel horizon du sol trouve-t-on surtout la litière (feuilles mortes, débris organiques) ?",o:["Horizon O","Horizon A","Horizon B","Horizon C"],a:0,e:"L'horizon O, en surface, est formé de matière organique en décomposition.",c:"litho"}
+);
+
+// ================= GÉNÉRATEURS (nouveaux nombres à chaque partie) =================
+const pk = a => a[Math.floor(Math.random()*a.length)];
+const nf = n => Number(Number(n).toPrecision(10)).toLocaleString("fr-CA", {maximumFractionDigits:4});
+function mkQ(q, ans, wrongs, unit, e, c, extra){
+  const fmtV = v => typeof v === "number" ? `${nf(v)}${unit ? " " + unit : ""}` : v;
+  const opts = [fmtV(ans)];
+  for (const w of wrongs){ const t = fmtV(w); if (!opts.includes(t) && !(typeof w === "number" && (w <= 0 || !isFinite(w)))) opts.push(t); if (opts.length === 4) break; }
+  let k = 2; while (opts.length < 4 && typeof ans === "number"){ const t = fmtV(ans*k + k); if (!opts.includes(t)) opts.push(t); k++; }
+  return Object.assign({q, o:opts, a:0, e, c, gen:true}, extra || {});
+}
+const ELEM = [["lithium","Li",3],["carbone","C",6],["azote","N",7],["oxygène","O",8],["fluor","F",9],["sodium","Na",11],["magnésium","Mg",12],["aluminium","Al",13],["silicium","Si",14],["phosphore","P",15],["soufre","S",16],["chlore","Cl",17],["potassium","K",19],["calcium","Ca",20]];
+const shells = Z => [Math.min(Z,2), Math.min(Math.max(Z-2,0),8), Math.min(Math.max(Z-10,0),8), Math.max(Z-18,0)].filter(n => n > 0);
+const GEN = {
+ mat:[
+  {c:"atome", f:() => { const [n,s,Z] = pk(ELEM), sh = shells(Z), v = sh[sh.length-1]; return mkQ(`Selon le modèle de Rutherford-Bohr, combien d'électrons de valence possède un atome de l'élément ${n} (${s}, Z = ${Z}) ?`, v, [Z, sh.length, 8-v, v+1, v+2], "", `Répartition : ${sh.join(" – ")}. La dernière couche contient ${v} électron(s).`, "atome"); }},
+  {c:"tableau", f:() => { const [n,s,Z] = pk(ELEM), sh = shells(Z); return mkQ(`Dans quelle période du tableau périodique se trouve l'élément ${n} (${s}, Z = ${Z}) ?`, `Période ${sh.length}`, [1,2,3,4].filter(p => p !== sh.length).map(p => `Période ${p}`), "", `Ses ${Z} électrons occupent ${sh.length} couches (${sh.join(" – ")}) : période ${sh.length}.`, "tableau"); }},
+  {c:"atome", f:() => { const [n,s,Z] = pk(ELEM), sh = shells(Z), v = sh[sh.length-1]; return mkQ(`Combien de points dessine-t-on autour du symbole ${s} dans la notation de Lewis de l'élément ${n} (Z = ${Z}) ?`, v, [Z, 8, v+1, Math.max(1,v-1), 2], "", `La notation de Lewis montre seulement les électrons de valence : ${v} pour l'élément ${n}.`, "atome"); }},
+  {c:"solutions", f:() => { const m = pk([2,3,4,5,6,8,10,12,15,20,24,30]), V = pk([100,200,250,400,500]), C = m/(V/1000); return mkQ(`On dissout ${nf(m)} g de soluté pour obtenir ${V} mL de solution. Quelle est la concentration ?`, C, [m/V, C/10, C*10, m*V/1000], "g/L", `${V} mL = ${nf(V/1000)} L. C = ${nf(m)} g ÷ ${nf(V/1000)} L = ${nf(C)} g/L.`, "solutions"); }},
+  {c:"solutions", f:() => { const p = pk([1,2,3,4,5,6,8,10,12,15]), V = pk([0.5,1,2,4,5]), g = p*V/1000; return mkQ(`Un échantillon de ${nf(V)} L d'eau contient ${nf(g)} g de plomb. Quelle est sa concentration en ppm ?`, p, [p*1000, p/1000, p*V, g], "ppm", `${nf(g)} g = ${nf(g*1000)} mg. C = ${nf(g*1000)} mg ÷ ${nf(V)} L = ${nf(p)} mg/L = ${nf(p)} ppm.`, "solutions"); }},
+  {c:"transfo", f:() => { const [a,b] = pk([["fer","soufre"],["magnésium","dioxygène"],["méthane","dioxygène"],["carbone","dioxygène"],["zinc","acide chlorhydrique"]]); const x = pk([7,12,24,28,40,56]), y = pk([8,16,32,48,64]); return mkQ(`En système fermé, ${x} g de ${a} réagissent complètement avec ${y} g de ${b}. Quelle masse totale de produits obtient-on ?`, x+y, [Math.abs(x-y), x*y, Math.max(x,y), x+y+10], "g", `Conservation de la masse : ${x} g + ${y} g = ${x+y} g de produits. Les atomes se réarrangent sans disparaître.`, "transfo"); }},
+  {c:"ph", f:() => { const v = pk([1,2,3,4,5,6,7,8,9,10,11,12,13]), t = v < 7 ? "Acide" : v === 7 ? "Neutre" : "Basique"; const ex = v < 7 ? pk(["du jus de citron","du vinaigre","une boisson gazeuse"]) : v === 7 ? "de l'eau pure" : pk(["de l'eau savonneuse","un nettoyant à l'ammoniaque","du bicarbonate de soude dissous"]); return mkQ(`Une solution (par exemple ${ex}) a un pH de ${v}. Elle est…`, t, ["Acide","Neutre","Basique","Impossible à classer"].filter(x => x !== t), "", `pH < 7 : acide · pH = 7 : neutre · pH > 7 : basique.`, "ph"); }}
+ ],
+ elec:[
+  {c:"ohm", f:() => { const I = pk([0.5,1,2,3,4,5,10]), R = pk([2,4,6,10,12,20,24]), U = I*R; return mkQ(`Un résistor de ${R} Ω est branché sous une tension de ${nf(U)} V. Quelle intensité le traverse ?`, I, [U*R, R/U, I*10, U+R], "A", `I = U ÷ R = ${nf(U)} V ÷ ${R} Ω = ${nf(I)} A.`, "ohm"); }},
+  {c:"ohm", f:() => { const I = pk([0.5,1,2,3,4,5]), R = pk([4,6,10,12,20,30,40]), U = I*R; return mkQ(`Un courant de ${nf(I)} A traverse un résistor de ${R} Ω. Quelle est la tension à ses bornes ?`, U, [R/I, I/R, U*10, R+I], "V", `U = R × I = ${R} Ω × ${nf(I)} A = ${nf(U)} V.`, "ohm"); }},
+  {c:"ohm", f:() => { const I = pk([0.5,2,3,4,6]), R = pk([3,5,8,12,15,20]), U = I*R; return mkQ(`Sous ${nf(U)} V, un appareil laisse passer ${nf(I)} A. Quelle est sa résistance ?`, R, [U*I, I/U, R*10, U-I], "Ω", `R = U ÷ I = ${nf(U)} V ÷ ${nf(I)} A = ${nf(R)} Ω.`, "ohm"); }},
+  {c:"puissance", f:() => { const U = pk([120,240]), I = pk([0.5,2,5,8,10,12,15]), P = U*I; const ap = pk(["un séchoir","une bouilloire","un four grille-pain","une lampe","un aspirateur"]); return mkQ(`${ap[0].toUpperCase()+ap.slice(1)} fonctionne sous ${U} V et consomme ${nf(I)} A. Quelle est sa puissance ?`, P, [U/I, U+I, P/10, P*10], "W", `P = U × I = ${U} V × ${nf(I)} A = ${nf(P)} W.`, "puissance"); }},
+  {c:"puissance", f:() => { const P = pk([60,100,500,800,1000,1200,1500,2000]), t = pk([2,3,4,5,6,10]), E = P*t/1000; return mkQ(`Un appareil de ${P} W fonctionne pendant ${t} h. Quelle énergie consomme-t-il ?`, E, [P*t, E*10, P/t, E/10], "kWh", `E = P × Δt = ${nf(P/1000)} kW × ${t} h = ${nf(E)} kWh.`, "puissance"); }},
+  {c:"energie", f:() => { const Ein = pk([100,200,400,500,1000,2000]), r = pk([10,15,20,25,40,60,75,80,90]), Eu = Ein*r/100; const ap = pk(["une ampoule","un moteur électrique","une bouilloire","un panneau solaire"]); return mkQ(`${ap[0].toUpperCase()+ap.slice(1)} reçoit ${Ein} J et en transforme ${nf(Eu)} J en énergie utile. Quel est son rendement ?`, r, [100-r, r/10, Math.round(Ein/Eu*100)/100, r+10], "%", `Rendement = ${nf(Eu)} J ÷ ${Ein} J × 100 = ${r} %. Le reste est surtout perdu en chaleur.`, "energie"); }}
+ ],
+ viv:[
+  {c:"pop", f:() => { let N, A; do { N = pk([60,90,120,150,180,240,300,450,600]); A = pk([10,15,20,30,40,60]); } while ((N/A*2) % 1); const sp = pk(["cerfs","orignaux","lièvres","renards","castors"]); return mkQ(`On compte ${N} ${sp} sur un territoire de ${A} km². Quelle est la densité de la population ?`, N/A, [N*A, Math.round(A/N*100)/100, N/A*10, N-A], `${sp}/km²`, `Densité = ${N} ÷ ${A} km² = ${nf(N/A)} ${sp}/km².`, "pop"); }},
+  {c:"pop", f:() => { const d = pk([2,3,4,5,8,10]), A = pk([20,25,40,50,100]), sp = pk(["ours noirs","loups","grands-ducs","martres"]); return mkQ(`Une population de ${sp} a une densité de ${d} individus/100 km². Combien d'individus vivent sur ${A*100} km² ?`, d*A, [d, d*A*100, A, d+A], "", `Nombre = densité × superficie = ${d} × ${A} (centaines de km²) = ${d*A} individus.`, "pop"); }}
+ ]
+};
+
+// Sélection renouvelée : questions jamais vues d'abord + questions générées avec de nouveaux nombres
+function freshSet(wid, n, filter){
+  filter = filter || (() => true);
+  const pool = Q[wid].filter(filter);
+  SAVE.seen = SAVE.seen || {}; const seen = SAVE.seen[wid] || [];
+  const unseen = shuffle(pool.filter(q => !seen.includes(q.q))), old = shuffle(pool.filter(q => seen.includes(q.q)));
+  const gens = shuffle((GEN[wid] || []).filter(g => filter({c:g.c, z:g.z})));
+  let nGen = gens.length ? Math.min(gens.length*2, Math.round(n*0.4)) : 0;
+  const stat = unseen.concat(old).slice(0, n - nGen);
+  nGen = n - stat.length;
+  const made = []; for (let i=0; i<nGen && gens.length; i++) made.push(gens[i % gens.length].f());
+  let s2 = seen.concat(stat.map(q => q.q));
+  if (Q[wid].every(q => s2.includes(q.q))) s2 = stat.map(q => q.q);
+  SAVE.seen[wid] = [...new Set(s2)]; persist();
+  return shuffle(stat.concat(made));
+}
+// ================= MOTEUR COMMUN =================
+const W = 960, H = 540;
+const cv = document.getElementById("cv");
+const g = cv.getContext("2d");
+g.imageSmoothingEnabled = false;
+const $ = id => document.getElementById(id);
+const rnd = (a,b) => a + Math.random()*(b-a);
+const clamp = (v,a,b) => Math.max(a,Math.min(b,v));
+const shuffle = arr => { const a = arr.slice(); for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];} return a; };
+const worldById = id => WORLDS.find(w => w.id === id);
+
+// ---------- Sauvegarde (par navigateur) ----------
+let SAVE = {stars:{}, cards:{}, sound:true};
+try { const s = JSON.parse(localStorage.getItem("odyssee-st4") || "null"); if (s) SAVE = Object.assign(SAVE, s); } catch(e){}
+function persist(){ try { localStorage.setItem("odyssee-st4", JSON.stringify(SAVE)); } catch(e){} }
+function unlockCard(id){ if(id && !SAVE.cards[id]){ SAVE.cards[id] = true; persist(); } }
+function setStars(wid, n){ SAVE.stars[wid] = Math.max(SAVE.stars[wid]||0, n); persist(); }
+
+// ---------- Audio : petit séquenceur chiptune ----------
+const AudioSys = (() => {
+  let ac = null, master = null, timer = null, step = 0, nextT = 0, song = null;
+  const NOTES = {C:0,"C#":1,D:2,"D#":3,E:4,F:5,"F#":6,G:7,"G#":8,A:9,"A#":10,B:11};
+  const freq = n => { const m = n.match(/^([A-G]#?)(\d)$/); if(!m) return 0; return 440*Math.pow(2,(NOTES[m[1]] + (+m[2]+1)*12 - 69)/12); };
+  const parse = s => s.trim().split(/\s+/);
+  function ensure(){
+    if (ac) return true;
+    try { ac = new (window.AudioContext || window.webkitAudioContext)(); } catch(e){ return false; }
+    master = ac.createGain(); master.gain.value = SAVE.sound ? 0.18 : 0; master.connect(ac.destination);
+    return true;
+  }
+  function tone(f, t, dur, type, vol, slideTo){
+    if (!f) return;
+    const o = ac.createOscillator(), v = ac.createGain();
+    o.type = type; o.frequency.setValueAtTime(f, t);
+    if (slideTo) o.frequency.exponentialRampToValueAtTime(slideTo, t+dur);
+    v.gain.setValueAtTime(vol, t); v.gain.exponentialRampToValueAtTime(0.0008, t+dur);
+    o.connect(v); v.connect(master); o.start(t); o.stop(t+dur+0.02);
+  }
+  let noiseBuf = null;
+  function noise(t, dur, vol, hp){
+    if (!noiseBuf){ noiseBuf = ac.createBuffer(1, ac.sampleRate*0.3, ac.sampleRate); const d = noiseBuf.getChannelData(0); for(let i=0;i<d.length;i++) d[i] = Math.random()*2-1; }
+    const s = ac.createBufferSource(), f = ac.createBiquadFilter(), v = ac.createGain();
+    s.buffer = noiseBuf; f.type = "highpass"; f.frequency.value = hp;
+    v.gain.setValueAtTime(vol, t); v.gain.exponentialRampToValueAtTime(0.0008, t+dur);
+    s.connect(f); f.connect(v); v.connect(master); s.start(t); s.stop(t+dur+0.02);
+  }
+  function tick(){
+    if (!song) return;
+    const spb = 60 / song.bpm / 2; // croches
+    while (nextT < ac.currentTime + 0.12){
+      const i = step % song.lead.length;
+      const L = song.lead[i], B = song.bass[step % song.bass.length];
+      let len = 1; while (song.lead[(i+len) % song.lead.length] === "-" && len < 8) len++;
+      if (L !== "." && L !== "-") tone(freq(L), nextT, spb*len*0.9, song.wave, 0.22);
+      if (B !== "." && B !== "-") tone(freq(B), nextT, spb*1.6, "triangle", 0.35);
+      if (song.drum){ const d = song.drum[step % song.drum.length]; if (d==="k") tone(150, nextT, 0.12, "sine", 0.5, 45); else if (d==="h") noise(nextT, 0.04, 0.12, 7000); else if (d==="s") noise(nextT, 0.12, 0.25, 1500); }
+      nextT += spb; step++;
+    }
+  }
+  return {
+    unlock(){ if (ensure() && ac.state === "suspended") ac.resume(); },
+    play(name){
+      if (!ensure()) return;
+      const S = SONGS[name]; if (!S) return;
+      song = {bpm:S.bpm, wave:S.wave, lead:parse(S.lead), bass:parse(S.bass), drum:S.drum ? parse(S.drum) : null};
+      step = 0; nextT = ac.currentTime + 0.05;
+      if (!timer) timer = setInterval(tick, 40);
+    },
+    stop(){ song = null; },
+    setOn(on){ SAVE.sound = on; persist(); if (master) master.gain.value = on ? 0.18 : 0; },
+    sfx(kind){
+      if (!ac || !SAVE.sound) return; const t = ac.currentTime;
+      if (kind==="jump") tone(320, t, 0.14, "square", 0.18, 640);
+      else if (kind==="coin"){ tone(988, t, 0.07, "square", 0.2); tone(1319, t+0.07, 0.22, "square", 0.2); }
+      else if (kind==="good"){ [523,659,784,1047].forEach((f,i)=>tone(f, t+i*0.07, 0.16, "square", 0.18)); }
+      else if (kind==="bad"){ tone(300, t, 0.18, "sawtooth", 0.2, 120); tone(200, t+0.16, 0.3, "sawtooth", 0.2, 80); }
+      else if (kind==="hit"){ noise(t, 0.18, 0.4, 500); tone(180, t, 0.2, "square", 0.2, 60); }
+      else if (kind==="stomp"){ tone(500, t, 0.1, "square", 0.2, 150); }
+      else if (kind==="bump"){ tone(140, t, 0.08, "square", 0.25, 90); }
+      else if (kind==="win"){ [523,659,784,659,784,1047].forEach((f,i)=>tone(f, t+i*0.12, 0.2, "square", 0.2)); }
+      else if (kind==="click"){ noise(t, 0.03, 0.2, 3000); }
+    }
+  };
+})();
+
+// Mélodies originales (croches ; "." silence ; "-" note tenue)
+const SONGS = {
+  menu:{bpm:132, wave:"square",
+    lead:"C5 . E5 G5 - . E5 . F5 . A5 C6 - . A5 . G5 . E5 C5 - . D5 E5 F5 . E5 . D5 - . . C5 . E5 G5 - . E5 . A5 . C6 A5 - . F5 . G5 . B4 D5 - . F5 . E5 - - . C5 - . .",
+    bass:"C3 . G2 . C3 . G2 . F2 . C3 . F2 . C3 . A2 . E2 . A2 . G2 . D3 . G2 . C3 . G2 . C3 . G2 . F2 . C3 . F2 . C3 . G2 . D3 . G2 . C3 . G2 . C3 . . .",
+    drum:"k . h . s . h . k . h . s . h h"},
+  mat:{bpm:150, wave:"square",
+    lead:"F5 . A5 . C6 . A5 . A#5 . G5 . E5 - . . F5 . C5 . F5 A5 . C6 D6 . C6 . A5 . G5 - . . A5 . A#5 . C6 . A5 F5 . G5 . A5 . F5 - . . E5 . G5 . A#5 . G5 E5 . C5 . E5 . F5 - - .",
+    bass:"F2 . C3 . F2 . C3 . A#2 . F3 . C3 . G2 . F2 . C3 . F2 . A2 . D3 . A2 . C3 . G2 . F2 . C3 . F2 . C3 . A#2 . F3 . C3 . G2 . C3 . E3 . C3 . F2 . . .",
+    drum:"k . h . s . h . k k h . s . h ."},
+  elec:{bpm:176, wave:"sawtooth",
+    lead:"A4 A5 . A4 G5 . A4 E5 . A4 G5 . C6 - B5 . A4 A5 . A4 G5 . E5 D5 . C5 D5 . E5 - . . F4 F5 . F4 E5 . F4 C5 . G4 D5 . G5 - F5 . E5 . E5 . G#4 B4 . E5 . G#5 - B5 - . .",
+    bass:"A2 A2 A3 A2 A2 A3 A2 A3 A2 A2 A3 A2 A2 A3 A2 A3 F2 F2 F3 F2 F2 F3 F2 F3 E2 E2 E3 E2 E2 E3 E2 E3",
+    drum:"k h s h k h s h k h s h k k s s"},
+  terre:{bpm:96, wave:"triangle",
+    lead:"D5 - - F5 - - A5 - G5 - - E5 - - C5 - D5 - - A4 - - C5 - B4 - - G4 - - A4 - F5 - - A5 - - C6 - B5 - - G5 - - E5 - D5 - - - - - . . . . . . . . . .",
+    bass:"D3 - A2 - D3 - A2 - C3 - G2 - C3 - G2 - G2 - D3 - G2 - D3 - A2 - E3 - A2 - E3 -",
+    drum:null},
+  viv:{bpm:144, wave:"square",
+    lead:"E5 . E5 G5 . E5 B5 . A5 . G5 . F#5 . E5 . E5 . E5 G5 . A5 B5 . D6 . C6 . B5 . A5 . G5 . G5 B5 . G5 D6 . C6 . B5 . A5 . G5 . F#5 . G5 A5 B5 . E5 . F#5 . D#5 . E5 - - .",
+    bass:"E2 E3 E2 E3 E2 E3 E2 E3 C3 C3 C2 C3 D3 D3 D2 D3 G2 G3 G2 G3 C3 C3 C2 C3 B2 B2 B1 B2 E2 E2 E3 E2",
+    drum:"k . h k s . h . k . h k s . s h"},
+  tech:{bpm:118, wave:"square",
+    lead:"G4 . B4 D5 . G5 . F5 . D5 . C5 . D5 - . G4 . B4 D5 . G5 . A5 . F5 . D5 . G5 - . C5 . E5 G5 . C6 . A#5 . G5 . F5 . G5 - . D5 . F5 A5 . C6 . B5 . A5 . F5 . G5 - - .",
+    bass:"G2 . G2 D3 . G2 . F2 . F2 C3 . F2 . G2 . G2 . G2 D3 . G2 . F2 . F2 C3 . D3 . G2 . C3 . C3 G3 . C3 . A#2 . A#2 F3 . A#2 . D3 . D3 A3 . D3 . G2 . G2 . G2 . . .",
+    drum:"k . h h s . h . k k h . s h h h"}
+};
+
+// ---------- Entrées ----------
+const keys = {left:false,right:false,up:false,down:false,jump:false};
+const pressed = {};
+const KEYMAP = {ArrowLeft:"left",KeyA:"left",ArrowRight:"right",KeyD:"right",ArrowUp:"up",KeyW:"up",ArrowDown:"down",KeyS:"down",Space:"jump"};
+addEventListener("keydown", e => {
+  AudioSys.unlock();
+  if (e.code === "Escape"){ if (!$("codex").hidden) closeCodex(); else if (scene && scene.world) quitToMenu(); return; }
+  if (!$("quiz").hidden){ quizKey(e); return; }
+  const k = KEYMAP[e.code]; if (!k) return;
+  if (scene && scene.world) e.preventDefault();
+  if (!keys[k]) pressed[k] = true; keys[k] = true;
+  if (k === "up") { if (!keys.jump) pressed.jump = true; }
+});
+addEventListener("keyup", e => { const k = KEYMAP[e.code]; if (k) keys[k] = false; });
+document.querySelectorAll("#pad button").forEach(b => {
+  const k = b.dataset.k;
+  const on = e => { e.preventDefault(); AudioSys.unlock(); if(!keys[k]) pressed[k] = true; keys[k] = true; if (k==="up") pressed.jump = true; b.classList.add("on"); };
+  const off = e => { e.preventDefault(); keys[k] = false; b.classList.remove("on"); };
+  b.addEventListener("pointerdown", on); b.addEventListener("pointerup", off); b.addEventListener("pointerleave", off); b.addEventListener("pointercancel", off);
+});
+const consume = k => { const v = !!pressed[k]; pressed[k] = false; return v; };
+
+// ---------- Utilitaires de dessin ----------
+function wrapText(text, x, y, maxW, lh, align){
+  const words = text.split(" "); let line = "", lines = [];
+  for (const w of words){ const t = line ? line + " " + w : w; if (g.measureText(t).width > maxW && line){ lines.push(line); line = w; } else line = t; }
+  if (line) lines.push(line);
+  g.textAlign = align || "left";
+  lines.forEach((l,i) => g.fillText(l, x, y + i*lh));
+  return lines.length;
+}
+function px(x,y,w,h,c){ g.fillStyle = c; g.fillRect(Math.round(x),Math.round(y),w,h); }
+function font(sz, fam){ g.font = (fam==="b" ? `700 ${sz}px "Atkinson Hyperlegible", sans-serif` : `700 ${sz}px "Pixelify Sans", monospace`); }
+
+// Héros scientifique dessiné en blocs (lunettes de labo, sarrau)
+function drawHero(x, y, face, t, opt){
+  opt = opt || {};
+  const s = opt.s || 3; const f = face < 0 ? -1 : 1;
+  g.save(); g.translate(Math.round(x), Math.round(y)); g.scale(f, 1);
+  const P = (cx,cy,w,h,c) => { g.fillStyle = c; g.fillRect((cx-6)*s, cy*s, w*s, h*s); };
+  const run = opt.run ? Math.floor(t*12)%2 : 0;
+  if (opt.blink && Math.floor(t*20)%2) { g.restore(); return; }
+  P(3,0,6,2,"#4a2b1a");               // cheveux
+  P(2,2,8,5,"#f2c79a");               // visage
+  P(2,2,1,3,"#4a2b1a");
+  P(3,3,6,2,"#1a1424"); P(4,3,1,1,"#8fd3ff"); P(7,3,1,1,"#8fd3ff"); // lunettes
+  P(1,7,10,6,opt.coat||"#ffffff");    // sarrau
+  P(5,7,2,6,"#3a5bd9");               // chandail
+  P(0,8,2,4,"#f2c79a");               // main arrière
+  P(10,8,2,3,"#f2c79a");
+  if (opt.air){ P(2,13,3,2,"#2d3561"); P(7,12,3,2,"#2d3561"); P(1,15,3,1,"#1a1424"); P(8,14,3,1,"#1a1424"); }
+  else if (run){ P(2,13,3,2,"#2d3561"); P(7,13,3,1,"#2d3561"); P(1,15,4,1,"#1a1424"); P(8,14,3,1,"#1a1424"); }
+  else { P(2,13,3,2,"#2d3561"); P(7,13,3,2,"#2d3561"); P(2,15,3,1,"#1a1424"); P(7,15,3,1,"#1a1424"); }
+  g.restore();
+}
+
+// ---------- Quiz (modal commun) ----------
+let quizState = null;
+function ask(worldId, q, done, opts){
+  opts = opts || {};
+  const w = worldById(worldId);
+  const order = shuffle(q.o.map((t,i)=>({t,i})));
+  quizState = {q, order, done, answered:false, worldId};
+  const card = $("quizCard");
+  card.style.setProperty("--q-edge", w.col);
+  card.innerHTML = `<div class="kick">${opts.kicker || w.name}</div><p class="q">${q.q}</p>
+    <div class="opts">${order.map((o,k)=>`<button type="button" class="opt" data-k="${k}"><b>${k+1}</b>${o.t}</button>`).join("")}</div>
+    <div id="qExpl"></div><div class="actions" id="qAct"></div>`;
+  card.querySelectorAll(".opt").forEach(b => b.addEventListener("click", () => answer(+b.dataset.k)));
+  $("quiz").hidden = false; paused = true;
+  card.querySelector(".opt").focus({preventScroll:true});
+}
+function answer(k){
+  const s = quizState; if (!s || s.answered) return;
+  s.answered = true;
+  const ok = s.order[k].i === s.q.a;
+  const btns = $("quizCard").querySelectorAll(".opt");
+  btns.forEach((b,j) => { b.disabled = true; if (s.order[j].i === s.q.a) b.classList.add("right"); else if (j===k) b.classList.add("wrong"); });
+  if (ok){ AudioSys.sfx("good"); unlockCard(s.q.c); } else AudioSys.sfx("bad");
+  $("qExpl").innerHTML = `<div class="expl ${ok?"":"bad"}"><b>${ok ? "Bonne réponse !" : "Pas tout à fait."}</b> ${s.q.e}</div>`;
+  $("qAct").innerHTML = `<button type="button" class="btn gold" id="qGo">Continuer ▸</button>`;
+  $("qGo").addEventListener("click", closeQuiz); $("qGo").focus({preventScroll:true});
+  s.ok = ok;
+}
+function closeQuiz(){
+  const s = quizState; if (!s || !s.answered) return;
+  $("quiz").hidden = true; paused = false; quizState = null;
+  for (const k in keys) keys[k] = false;
+  s.done(s.ok);
+}
+function quizKey(e){
+  if (!quizState) return;
+  if (!quizState.answered && /^Digit[1-4]$/.test(e.code)){ const n = +e.code.slice(5)-1; if (n < quizState.order.length) answer(n); }
+  else if (quizState.answered && (e.code==="Enter" || e.code==="Space")){ e.preventDefault(); closeQuiz(); }
+}
+
+// ---------- Carnet de notions ----------
+let codexTab = "mat";
+function openCodex(tab){
+  if (tab) codexTab = tab;
+  const total = Object.values(CODEX).flat().length, got = Object.values(CODEX).flat().filter(c=>SAVE.cards[c.id]).length;
+  const w = worldById(codexTab);
+  const el = $("codex");
+  el.innerHTML = `<div class="head"><h2>Carnet de notions · ${got}/${total} fiches</h2>
+    <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" id="cxAll" type="button">${SAVE.showAll?"Masquer les fiches non gagnées":"Tout afficher (révision)"}</button><button class="btn gold" id="cxClose" type="button">Fermer</button></div></div>
+    <div class="tabs" role="tablist">${WORLDS.map(x=>`<button type="button" role="tab" class="tab" data-t="${x.id}" aria-selected="${x.id===codexTab}" style="--t-c:${x.col}">${x.name}</button>`).join("")}</div>
+    <div class="cards">${CODEX[codexTab].map(c => { const open = SAVE.cards[c.id] || SAVE.showAll;
+      return `<article class="note ${open?"":"locked"}" style="--t-c:${w.col}"><h3>${open?c.t:"Fiche verrouillée"}</h3><p>${open?c.h:"Réponds correctement à une question de ce thème pour la débloquer."}</p></article>`; }).join("")}</div>`;
+  el.hidden = false; paused = true;
+  el.querySelectorAll(".tab").forEach(b => b.addEventListener("click", () => openCodex(b.dataset.t)));
+  $("cxClose").addEventListener("click", closeCodex);
+  $("cxAll").addEventListener("click", () => { SAVE.showAll = !SAVE.showAll; persist(); openCodex(); });
+  $("cxClose").focus({preventScroll:true});
+}
+function closeCodex(){ $("codex").hidden = true; paused = !$("quiz").hidden; }
+
+// ---------- Bannière (début / fin de monde) ----------
+function banner(title, text, buttons, color){
+  const el = $("banner");
+  el.innerHTML = `<h2 style="color:${color||"var(--coin)"}">${title}</h2><p>${text}</p><div class="row" style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center">${buttons.map((b,i)=>`<button type="button" class="btn ${i===0?"gold":""}" data-i="${i}">${b.label}</button>`).join("")}</div>`;
+  el.hidden = false; paused = true;
+  el.querySelectorAll("button").forEach(b => b.addEventListener("click", () => { el.hidden = true; paused = false; AudioSys.unlock(); buttons[+b.dataset.i].fn(); }));
+  el.querySelector("button").focus({preventScroll:true});
+}
+
+// ---------- HUD ----------
+function hud(show){ $("hud").hidden = !show; }
+function setHud(name, hearts, maxH, score){
+  $("hudWorld").textContent = name;
+  $("hudHearts").textContent = "♥".repeat(Math.max(0,hearts)) + "♡".repeat(Math.max(0,maxH-hearts));
+  $("hudScore").textContent = "✦ " + score;
+}
+
+// ---------- Boucle principale ----------
+let scene = null, paused = false, last = performance.now(), T = 0;
+function go(sc){ scene = sc; for (const k in pressed) pressed[k] = false; if (sc.enter) sc.enter(); }
+function loop(now){
+  const dt = Math.min(1/30, (now - last)/1000); last = now;
+  if (scene){
+    if (!paused){ T += dt; scene.update && scene.update(dt); }
+    scene.draw && scene.draw(dt);
+  }
+  requestAnimationFrame(loop);
+}
+
+function finishWorld(wid, stars, text){
+  setStars(wid, stars);
+  AudioSys.stop(); AudioSys.sfx("win");
+  const w = worldById(wid);
+  banner(`${w.name} : terminé !`, `${"★".repeat(stars)}${"☆".repeat(3-stars)} — ${text}`, [
+    {label:"Retour à la carte", fn:quitToMenu},
+    {label:"Voir les fiches", fn:()=>{ quitToMenu(); openCodex(wid); }},
+    {label:"Rejouer", fn:()=>startWorld(wid)}
+  ], w.col);
+}
+function gameOver(wid, text){
+  AudioSys.stop(); AudioSys.sfx("bad");
+  const w = worldById(wid);
+  banner("Oups !", text || "Plus de cœurs. Révise les fiches et retente ta chance.", [
+    {label:"Rejouer", fn:()=>startWorld(wid)},
+    {label:"Retour à la carte", fn:quitToMenu}
+  ], "var(--hit)");
+}
+function quitToMenu(){
+  $("quiz").hidden = true; $("atelier").hidden = true; $("banner").hidden = true; quizState = null; paused = false;
+  hud(false); go(MenuScene);
+}
+function startWorld(wid){
+  $("menu").hidden = true; $("banner").hidden = true; $("atelier").hidden = true;
+  const S = {mat:PlatformWorld, elec:RunnerWorld, terre:DiveWorld, viv:RpgWorld, tech:AtelierWorld}[wid];
+  go(S());
+}
+$("btnQuit").addEventListener("click", quitToMenu);
+// ================= CARTE DES MONDES =================
+function drawPreview(c, wid){
+  const x = c.getContext("2d"), w = c.width, h = c.height;
+  x.imageSmoothingEnabled = false;
+  const R = (a,b,cw,ch,col) => { x.fillStyle = col; x.fillRect(a,b,cw,ch); };
+  if (wid==="mat"){
+    R(0,0,w,h,"#1d3c5c"); for(let i=0;i<w;i+=8) R(i,0,1,h,"#24476b");
+    R(0,h-14,w,14,"#e9f1f5"); for(let i=0;i<w;i+=8) R(i,h-14,1,14,"#9fb4c0");
+    R(26,22,10,10,"#ffc93c"); R(29,24,4,6,"#7a4b00"); R(36,22,10,10,"#c76a3a"); R(16,22,10,10,"#c76a3a");
+    R(60,h-24,8,10,"#ff5d6c"); R(70,h-34,6,10,"#8fd3ff"); R(68,h-40,10,4,"#8fd3ff");
+    R(10,h-26,6,12,"#fff"); R(10,h-30,6,4,"#4a2b1a");
+  } else if (wid==="elec"){
+    R(0,0,w,h,"#2a1b00"); for(let i=0;i<6;i++) R(0,i*6,w,3,`rgba(255,201,60,${0.05+i*0.03})`);
+    x.strokeStyle="#ffc93c"; x.lineWidth=2; x.beginPath(); x.moveTo(50,4); x.lineTo(42,22); x.lineTo(52,22); x.lineTo(44,40); x.stroke();
+    R(0,h-12,w,12,"#3d2d0a"); for(let i=0;i<w;i+=10) R(i,h-12,5,3,"#ffc93c");
+    x.strokeStyle="#5ee6a0"; x.beginPath(); x.arc(70,26,8,0,7); x.stroke();
+    R(12,h-26,6,14,"#fff");
+  } else if (wid==="terre"){
+    const gr = x.createLinearGradient(0,0,0,h); gr.addColorStop(0,"#05061a"); gr.addColorStop(.3,"#2b6fb0"); gr.addColorStop(.62,"#0b5f73"); gr.addColorStop(.63,"#6b4a2b"); gr.addColorStop(1,"#3a2716");
+    x.fillStyle = gr; x.fillRect(0,0,w,h);
+    for(let i=0;i<8;i++) R((i*37)%w,(i*11)%14,1,1,"#fff");
+    R(50,30,14,8,"#e8eef2"); R(56,38,2,4,"#ffc93c");
+    x.fillStyle="#5ee6c8"; x.beginPath(); x.arc(22,44,4,0,7); x.fill();
+  } else if (wid==="viv"){
+    R(0,0,w,h,"#c9e6a6"); for(let i=0;i<5;i++){ R(i*20+4,10,12,26,"#2f5a1e"); R(i*20+9,34,3,10,"#5a3a1a"); }
+    R(0,h-14,w,14,"#5d7d2a");
+    R(18,h-30,6,16,"#fff"); R(56,h-34,18,18,"#7a2a7a"); R(60,h-30,3,3,"#ffc93c"); R(67,h-30,3,3,"#ffc93c");
+  } else {
+    R(0,0,w,h,"#16324f"); for(let i=0;i<w;i+=6) R(i,0,1,h,"#1e4166"); for(let j=0;j<h;j+=6) R(0,j,w,1,"#1e4166");
+    x.strokeStyle="#ff9a52"; x.lineWidth=2;
+    x.beginPath(); x.arc(30,30,14,0,7); x.stroke(); x.beginPath(); x.arc(58,30,8,0,7); x.stroke();
+    for(let a=0;a<12;a++){ const t=a/12*6.283; R(30+Math.cos(t)*16-1,30+Math.sin(t)*16-1,3,3,"#ff9a52"); }
+    R(10,h-10,w-20,3,"#bfe3ff");
+  }
+}
+function buildMenu(){
+  const box = $("worlds"); box.innerHTML = "";
+  WORLDS.forEach(w => {
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "portal";
+    b.style.setProperty("--w-bg", w.bg); b.style.setProperty("--w-edge", w.edge); b.style.setProperty("--w-ink", w.ink);
+    const st = SAVE.stars[w.id] || 0;
+    b.innerHTML = `<span class="no">${w.no}</span><canvas width="96" height="72"></canvas><span class="nm">${w.name}</span><span class="mode">${w.mode}</span><span class="stars" aria-label="${st} étoiles sur 3">${"★".repeat(st)}${"☆".repeat(3-st)}</span>`;
+    drawPreview(b.querySelector("canvas"), w.id);
+    b.addEventListener("click", () => { AudioSys.unlock(); startWorld(w.id); });
+    box.appendChild(b);
+  });
+}
+const MenuScene = {
+  enter(){ buildMenu(); $("menu").hidden = false; hud(false); AudioSys.play("menu"); },
+  update(){},
+  draw(){
+    const gr = g.createLinearGradient(0,0,0,H); gr.addColorStop(0,"#120f24"); gr.addColorStop(1,"#2c2350");
+    g.fillStyle = gr; g.fillRect(0,0,W,H);
+    for (let i=0;i<70;i++){ const sx = (i*137 + T*6*(1+i%3)) % W, sy = (i*71)%300; px(sx, sy, 2, 2, i%5? "#ffffff55":"#ffc93caa"); }
+    const hill = (yb, amp, col, sp) => { g.fillStyle = col; g.beginPath(); g.moveTo(0,H); for(let x=0;x<=W;x+=16){ g.lineTo(x, yb + Math.sin((x + T*sp)/90)*amp + Math.sin((x+T*sp)/37)*amp*0.3); } g.lineTo(W,H); g.fill(); };
+    hill(400, 26, "#3d3270", 20); hill(450, 18, "#4a3d86", 40);
+    px(0,500,W,40,"#1a1430");
+    drawHero(((T*90)%(W+80))-40, 452, 1, T, {run:true});
+  }
+};
+
+// ================= MONDE 1 : PLATEFORMES (Labo de la Matière) =================
+function PlatformWorld(){
+  const TS = 40, COLS = 172, ROWS = 14, WID = "mat";
+  const map = []; for (let r=0;r<ROWS;r++) map.push(new Array(COLS).fill(" "));
+  const set = (c,r,ch) => { if (c>=0&&c<COLS&&r>=0&&r<ROWS) map[r][c] = ch; };
+  for (let c=0;c<COLS;c++){ set(c,12,"#"); set(c,13,"#"); }
+  [[28,30],[62,64],[98,100],[134,136]].forEach(([a,b]) => { for(let c=a;c<=b;c++){ set(c,12," "); set(c,13," "); } });
+  const qCols = [10,22,40,54,74,90,112,126,146];
+  qCols.forEach(c => set(c,8,"?"));
+  [[21,8],[23,8],[53,8],[55,8],[111,8],[113,8],[125,8],[127,8],[89,8],[91,8]].forEach(([c,r])=>set(c,r,"B"));
+  [[44,11],[44,10],[45,11],[45,10],[80,11],[80,10],[80,9],[81,11],[81,10],[81,9],[118,11],[118,10],[119,11],[119,10]].forEach(([c,r])=>set(c,r,"="));
+  [[66,7],[67,7],[68,7],[69,7],[102,6],[103,6],[104,6],[138,8],[139,8],[140,8]].forEach(([c,r])=>set(c,r,"B"));
+  for (let i=0;i<6;i++) for (let h=0;h<=i;h++) set(154+i, 11-h, "=");
+  for (let h=0;h<6;h++) set(160, 11-h, "=");
+  const solid = ch => ch==="#"||ch==="B"||ch==="?"||ch==="X"||ch==="=";
+  const tile = (c,r) => (c<0||c>=COLS) ? "#" : (r<0||r>=ROWS) ? " " : map[r][c];
+
+  const qs = freshSet("mat", qCols.length);
+  const qAt = {}; qCols.forEach((c,i)=> qAt[c] = qs[i]);
+  const brickSym = {}; const SYM = ["H","He","Li","C","N","O","Na","Mg","Al","Si","P","S","Cl","Ar","K","Ca","Fe","Cu"];
+  const flagX = 166*TS;
+
+  const coins = [];
+  [[14,10],[15,9],[16,10],[33,10],[34,9],[35,10],[67,6],[68,6],[103,5],[139,7],[84,10],[85,10],[86,10],[148,10],[149,10]].forEach(([c,r]) => coins.push({x:c*TS+20,y:r*TS+20,on:true}));
+  const enemies = [18,36,48,70,86,106,122,142,150].map((c,i) => ({x:c*TS, y:12*TS-30, w:32, h:30, vx:i%2? -55:55, alive:true, sq:0, kind:i%3}));
+
+  const p = {x:3*TS, y:10*TS, w:24, h:46, vx:0, vy:0, on:false, face:1, inv:0, safeX:3*TS};
+  let cam = 0, hearts = 3, score = 0, right = 0, asked = 0, bumps = [], pops = [], done = false, msg = null;
+
+  function collideX(){
+    const top = Math.floor(p.y/TS), bot = Math.floor((p.y+p.h-1)/TS);
+    if (p.vx > 0){ const c = Math.floor((p.x+p.w)/TS); for(let r=top;r<=bot;r++) if (solid(tile(c,r))){ p.x = c*TS - p.w - 0.01; p.vx = 0; } }
+    else if (p.vx < 0){ const c = Math.floor(p.x/TS); for(let r=top;r<=bot;r++) if (solid(tile(c,r))){ p.x = (c+1)*TS + 0.01; p.vx = 0; } }
+  }
+  function collideY(){
+    const l = Math.floor(p.x/TS), rr = Math.floor((p.x+p.w-1)/TS);
+    p.on = false;
+    if (p.vy > 0){ const r = Math.floor((p.y+p.h)/TS); for(let c=l;c<=rr;c++) if (solid(tile(c,r))){ p.y = r*TS - p.h; p.vy = 0; p.on = true; } }
+    else if (p.vy < 0){
+      const r = Math.floor(p.y/TS);
+      let hitC = -1, best = 1e9;
+      for(let c=l;c<=rr;c++) if (solid(tile(c,r))){ const d = Math.abs((c*TS+20)-(p.x+p.w/2)); if (d<best){best=d;hitC=c;} }
+      if (hitC >= 0){ p.y = (r+1)*TS; p.vy = 0; hitBlock(hitC, r); }
+    }
+  }
+  function hitBlock(c, r){
+    const ch = tile(c,r);
+    bumps.push({c,r,t:0.18});
+    if (ch === "?"){
+      map[r][c] = "X"; asked++;
+      AudioSys.sfx("coin");
+      const q = qAt[c];
+      setTimeout(() => ask(WID, q, ok => { if (ok){ right++; score += 100; pops.push({x:c*TS+20,y:r*TS-10,t:1,txt:"+100"}); } else pops.push({x:c*TS+20,y:r*TS-10,t:1,txt:"✗"}); }, {kicker:"Bloc ? · Labo de la Matière"}), 120);
+    } else AudioSys.sfx("bump");
+  }
+  function hurt(){
+    if (p.inv > 0) return;
+    hearts--; p.inv = 1.6; AudioSys.sfx("hit");
+    if (hearts <= 0){ done = true; gameOver(WID); }
+  }
+  function finish(){
+    done = true;
+    const ratio = asked ? right/qCols.length : 0;
+    const stars = ratio >= 0.85 ? 3 : ratio >= 0.6 ? 2 : 1;
+    finishWorld(WID, stars, `${right} bonne(s) réponse(s) sur ${qCols.length} blocs ? · ${score} points.`);
+  }
+
+  return {
+    world:WID,
+    enter(){
+      hud(true); setHud("Labo de la Matière", hearts, 3, score); AudioSys.play("mat");
+      msg = {t:4, txt:"Frappe les blocs ? par en dessous pour répondre. Saute sur les ions pour les neutraliser !"};
+    },
+    update(dt){
+      if (done) return;
+      const acc = p.on ? 1900 : 1200, max = 270;
+      if (keys.left){ p.vx = Math.max(-max, p.vx - acc*dt); p.face = -1; }
+      else if (keys.right){ p.vx = Math.min(max, p.vx + acc*dt); p.face = 1; }
+      else { p.vx *= p.on ? Math.pow(0.0005, dt) : Math.pow(0.2, dt); if (Math.abs(p.vx)<5) p.vx = 0; }
+      if (consume("jump") && p.on){ p.vy = -740; AudioSys.sfx("jump"); }
+      if (!keys.jump && !keys.up && p.vy < -300) p.vy = -300;
+      p.vy = Math.min(900, p.vy + 1900*dt);
+      p.x += p.vx*dt; p.x = Math.max(0, p.x); collideX();
+      p.y += p.vy*dt; collideY();
+      if (p.on && solid(tile(Math.floor((p.x+p.w/2)/TS), Math.floor((p.y+p.h+2)/TS)))) p.safeX = p.x;
+      if (p.y > H + 60){ hurt(); if (!done){ p.x = p.safeX - 60; p.y = 6*TS; p.vy = 0; p.vx = 0; } }
+      if (p.inv > 0) p.inv -= dt;
+
+      for (const e of enemies){
+        if (!e.alive){ e.sq -= dt; continue; }
+        if (Math.abs(e.x - p.x) > W) continue;
+        e.x += e.vx*dt;
+        const ahead = e.vx > 0 ? e.x + e.w + 2 : e.x - 2;
+        const c = Math.floor(ahead/TS), r = Math.floor((e.y+e.h-4)/TS);
+        if (solid(tile(c, r)) || !solid(tile(c, r+1))) e.vx *= -1;
+        if (p.x < e.x+e.w && p.x+p.w > e.x && p.y < e.y+e.h && p.y+p.h > e.y){
+          if (p.vy > 60 && p.y + p.h - e.y < 22){ e.alive = false; e.sq = 0.5; p.vy = -460; score += 20; AudioSys.sfx("stomp"); pops.push({x:e.x+16,y:e.y,t:0.8,txt:"+20"}); }
+          else hurt();
+        }
+      }
+      for (const co of coins) if (co.on && Math.abs(co.x - (p.x+p.w/2)) < 22 && Math.abs(co.y - (p.y+p.h/2)) < 30){ co.on = false; score += 10; AudioSys.sfx("coin"); }
+      bumps.forEach(b => b.t -= dt); bumps = bumps.filter(b => b.t > 0);
+      pops.forEach(b => b.t -= dt); pops = pops.filter(b => b.t > 0);
+      if (msg){ msg.t -= dt; if (msg.t <= 0) msg = null; }
+      cam += ((p.x - W*0.4) - cam) * Math.min(1, dt*8);
+      cam = clamp(cam, 0, COLS*TS - W);
+      setHud("Labo de la Matière", hearts, 3, score);
+      if (p.x > flagX) finish();
+    },
+    draw(){
+      // fond : mur de labo carrelé + étagères en parallaxe
+      g.fillStyle = "#1d3c5c"; g.fillRect(0,0,W,H);
+      const o1 = -(cam*0.2)%48;
+      g.fillStyle = "#24476b"; for (let x=o1;x<W;x+=48) g.fillRect(x,0,2,H); for (let y=0;y<H;y+=48) g.fillRect(0,y,W,2);
+      const o2 = -(cam*0.45);
+      for (let i=0;i<40;i++){
+        const sx = o2 + i*260; if (sx < -260 || sx > W) continue;
+        px(sx, 150, 200, 8, "#5b3b22"); px(sx, 158, 200, 4, "#3a2616");
+        const cols = ["#ff5d6c","#5ee6a0","#ffc93c","#c08bff"];
+        for (let k=0;k<4;k++){ const bx = sx+16+k*46, c = cols[(i+k)%4];
+          if ((i+k)%2){ px(bx+8,110,12,14,"#cfe7f5"); px(bx,124,28,26,"#cfe7f5"); px(bx+3,132,22,18,c); }
+          else { px(bx+6,100,16,50,"#cfe7f5"); px(bx+9,120,10,30,c); px(bx+4,96,20,5,"#9fb4c0"); }
+        }
+        const by = 132 - ((T*30 + i*17) % 50); px(sx+30, by, 4, 4, "#ffffff88");
+      }
+      // tuiles
+      const c0 = Math.floor(cam/TS), c1 = Math.min(COLS-1, c0 + Math.ceil(W/TS) + 1);
+      for (let r=0;r<ROWS;r++) for (let c=c0;c<=c1;c++){
+        const ch = map[r][c]; if (ch === " ") continue;
+        let x = c*TS - cam, y = r*TS;
+        const b = bumps.find(b => b.c===c && b.r===r); if (b) y -= Math.sin((b.t/0.18)*Math.PI)*10;
+        if (ch === "#"){ px(x,y,TS,TS, r===12 ? "#e9f1f5" : "#c9d7e0"); px(x,y,TS,2,"#9fb4c0"); px(x,y,2,TS,"#9fb4c0"); if (r===12) px(x,y,TS,6,"#ffffff"); }
+        else if (ch === "="){ px(x,y,TS,TS,"#7d8fa6"); px(x+3,y+3,TS-6,TS-6,"#93a7bf"); px(x+3,y+3,TS-6,3,"#b8c9dc"); }
+        else if (ch === "B"){
+          const s = brickSym[c+"_"+r] || (brickSym[c+"_"+r] = SYM[(c*7+r*3)%SYM.length]);
+          px(x,y,TS,TS,"#c76a3a"); px(x+2,y+2,TS-4,TS-4,"#e08a54"); g.fillStyle = "#3a1a08"; font(15); g.textAlign = "center"; g.fillText(s, x+20, y+26);
+        }
+        else if (ch === "?"){ const fl = Math.floor(T*4)%4===0; px(x,y,TS,TS,"#7a4b00"); px(x+2,y+2,TS-4,TS-4, fl ? "#ffe08a" : "#ffc93c"); g.fillStyle = "#7a4b00"; font(24); g.textAlign = "center"; g.fillText("?", x+20, y+29); }
+        else if (ch === "X"){ px(x,y,TS,TS,"#5a4630"); px(x+3,y+3,TS-6,TS-6,"#7a6248"); }
+      }
+      // fiole d'arrivée
+      const fx = flagX - cam;
+      px(fx+16, 220, 8, 260, "#e9f1f5");
+      g.fillStyle = "#cfe7f5"; g.beginPath(); g.moveTo(fx-12,480); g.lineTo(fx+52,480); g.lineTo(fx+28,400); g.lineTo(fx+28,370); g.lineTo(fx+12,370); g.lineTo(fx+12,400); g.closePath(); g.fill();
+      g.fillStyle = "#5ee6a0"; g.beginPath(); g.moveTo(fx-6,474); g.lineTo(fx+46,474); g.lineTo(fx+34,440); g.lineTo(fx+6,440); g.closePath(); g.fill();
+      px(fx+24, 220, 60, 34, "#ffc93c"); g.fillStyle="#2a1c00"; font(16); g.textAlign="center"; g.fillText("FIN", fx+54, 243);
+      // pièces : atomes
+      for (const co of coins){ if (!co.on) continue; const x = co.x - cam; if (x<-20||x>W+20) continue;
+        g.strokeStyle = "#ffc93c"; g.lineWidth = 2; g.beginPath(); g.ellipse(x, co.y, 12*Math.abs(Math.cos(T*3)), 5, 0.6, 0, 7); g.stroke(); g.beginPath(); g.ellipse(x, co.y, 12*Math.abs(Math.cos(T*3)), 5, -0.6, 0, 7); g.stroke(); px(x-3, co.y-3, 6, 6, "#ff5d6c"); }
+      // ennemis : ions
+      for (const e of enemies){
+        const x = e.x - cam; if (x<-50||x>W+50) continue;
+        if (!e.alive){ if (e.sq > 0){ px(x, e.y+e.h-8, e.w, 8, "#888"); } continue; }
+        const col = ["#ff5d6c","#5b8cff","#c08bff"][e.kind], lbl = ["Cl⁻","Na⁺","O²⁻"][e.kind];
+        const bob = Math.sin(T*10 + e.x)*2;
+        g.fillStyle = col; g.beginPath(); g.arc(x+16, e.y+16+bob, 16, 0, 7); g.fill();
+        px(x+8, e.y+10+bob, 5, 5, "#fff"); px(x+19, e.y+10+bob, 5, 5, "#fff"); px(x+ (e.vx>0?11:8), e.y+12+bob, 2, 3, "#000"); px(x+(e.vx>0?22:19), e.y+12+bob, 2, 3, "#000");
+        g.fillStyle = "#fff"; font(12); g.textAlign = "center"; g.fillText(lbl, x+16, e.y+27+bob);
+        px(x+4, e.y+28, 8, 4, "#1a1424"); px(x+20, e.y+28, 8, 4, "#1a1424");
+      }
+      drawHero(p.x + p.w/2 - cam, p.y - 2, p.face, T, {run: Math.abs(p.vx) > 20 && p.on, air: !p.on, blink: p.inv > 0});
+      for (const b of pops){ g.fillStyle = b.txt==="✗" ? "#ff5d6c" : "#ffc93c"; font(20); g.textAlign = "center"; g.fillText(b.txt, b.x - cam, b.y - (1-b.t)*40); }
+      if (msg){ g.fillStyle = "#000b"; g.fillRect(W/2-330, 56, 660, 54); g.fillStyle = "#fff"; font(17, "b"); wrapText(msg.txt, W/2, 78, 620, 22, "center"); }
+    }
+  };
+}
+// Carte d'explication (après une réponse donnée dans le jeu lui-même)
+function explain(wid, q, chosen, cb){
+  const ok = chosen === q.a;
+  if (ok){ AudioSys.sfx("good"); unlockCard(q.c); } else AudioSys.sfx("bad");
+  const w = worldById(wid), card = $("quizCard");
+  card.style.setProperty("--q-edge", w.col);
+  card.innerHTML = `<div class="kick">${w.name}</div><p class="q">${q.q}</p>
+    ${chosen >= 0 ? `<div class="opt ${ok?"right":"wrong"}" style="cursor:default">Ta réponse : ${q.o[chosen]}</div>` : `<div class="opt wrong" style="cursor:default">Aucune réponse attrapée.</div>`}
+    ${ok ? "" : `<div class="opt right" style="cursor:default">Bonne réponse : ${q.o[q.a]}</div>`}
+    <div class="expl ${ok?"":"bad"}"><b>${ok?"Bravo !":"À retenir :"}</b> ${q.e}</div>
+    <div class="actions"><button type="button" class="btn gold" id="qGo">Continuer ▸</button></div>`;
+  quizState = {answered:true, ok, done:cb};
+  $("quiz").hidden = false; paused = true;
+  $("qGo").addEventListener("click", closeQuiz); $("qGo").focus({preventScroll:true});
+}
+// Bandeau de question dessiné sur le canevas (sous le HUD), retourne sa hauteur
+function linesOf(text, maxW){ const out = []; let line = ""; for (const w of text.split(" ")){ const t = line ? line+" "+w : w; if (g.measureText(t).width > maxW && line){ out.push(line); line = w; } else line = t; } if (line) out.push(line); return out; }
+function qPanel(q, labels, col, cols){
+  const top = 50, pad = 24, gap = 18, colW = (W - pad*2 - gap*(cols-1)) / cols;
+  font(18, "b"); const qL = linesOf(q.q, W - pad*2);
+  font(15, "b");
+  const L = labels.map(l => { const tw = g.measureText(l.tag).width + 8; return {tag:l.tag, tw, lines:linesOf(l.txt, colW - tw)}; });
+  const rows = []; for (let i=0;i<L.length;i+=cols) rows.push(Math.max(...L.slice(i,i+cols).map(o => o.lines.length)));
+  const hh = top + qL.length*23 + 8 + rows.reduce((a,r)=>a + r*19 + 8, 0) + 4;
+  g.fillStyle = "#0d0b18eb"; g.fillRect(0, 0, W, hh);
+  g.fillStyle = col; g.fillRect(0, hh-4, W, 4);
+  font(18, "b"); g.fillStyle = "#fff"; g.textAlign = "left";
+  qL.forEach((l,i) => g.fillText(l, pad, top + 14 + i*23));
+  font(15, "b");
+  let y = top + qL.length*23 + 8 + 12;
+  rows.forEach((rh, r) => {
+    for (let c=0;c<cols;c++){ const o = L[r*cols + c]; if (!o) continue; const x0 = pad + c*(colW + gap);
+      g.fillStyle = col; g.fillText(o.tag, x0, y); g.fillStyle = "#f3eedc"; o.lines.forEach((ln,k) => g.fillText(ln, x0 + o.tw, y + k*19)); }
+    y += rh*19 + 8;
+  });
+  return hh;
+}
+
+// ================= MONDE 2 : COURSE (Centrale Ampère) =================
+function RunnerWorld(){
+  const WID = "elec", GROUND = 500, PX = 190, NQ = 8;
+  const qs = freshSet("elec", NQ);
+  const p = {y:GROUND-46, vy:0, on:true, jumps:0, inv:0};
+  let speed = 360, dist = 0, hearts = 3, score = 0, right = 0, qi = 0, done = false;
+  let phase = "run", phaseT = 3.2, obs = [], bolts = [], rings = null, cur = null, spawnT = 1, sparks = [];
+  const LEVELS = [{y:GROUND-30, tag:"SOL"},{y:GROUND-150, tag:"SAUT"},{y:GROUND-265, tag:"DOUBLE"}];
+
+  function hurt(){ if (p.inv > 0) return; hearts--; p.inv = 1.4; AudioSys.sfx("hit"); if (hearts <= 0){ done = true; gameOver(WID, "Court-circuit ! Plus de cœurs. Révise la loi d'Ohm et retente ta chance."); } }
+  function startQuestion(){
+    cur = qs[qi];
+    const wrong = shuffle([0,1,2,3].filter(i => i !== cur.a)).slice(0,2);
+    const picks = shuffle([cur.a, ...wrong]);
+    rings = picks.map((oi,k) => ({oi, x: W + 980, y: LEVELS[k].y, tag: LEVELS[k].tag}));
+    phase = "q";
+  }
+  function resolve(chosen){
+    rings = null; phase = "run"; phaseT = 3.4; qi++;
+    if (chosen === cur.a){ right++; score += 150; }
+    const q = cur;
+    explain(WID, q, chosen, () => { if (qi >= NQ){ done = true; const st = right >= 7 ? 3 : right >= 5 ? 2 : 1; finishWorld(WID, st, `${right}/${NQ} anneaux corrects · ${score} points.`); } });
+  }
+  return {
+    world:WID,
+    enter(){ hud(true); AudioSys.play("elec"); setHud("Centrale Ampère", hearts, 3, score); },
+    update(dt){
+      if (done) return;
+      const v = phase === "q" ? 230 : speed;
+      dist += v*dt;
+      if (consume("jump") && p.jumps < 2){ p.vy = p.jumps === 0 ? -720 : -640; p.jumps++; p.on = false; AudioSys.sfx("jump"); for(let i=0;i<8;i++) sparks.push({x:PX, y:p.y+46, vx:rnd(-120,60), vy:rnd(-80,40), t:0.4}); }
+      p.vy += 2000*dt; p.y += p.vy*dt;
+      if (keys.down && !p.on) p.vy += 2400*dt;
+      if (p.y >= GROUND-46){ p.y = GROUND-46; p.vy = 0; p.on = true; p.jumps = 0; }
+      if (p.inv > 0) p.inv -= dt;
+
+      if (phase === "run"){
+        phaseT -= dt; spawnT -= dt;
+        if (spawnT <= 0 && phaseT > 1.2){
+          spawnT = rnd(0.9, 1.5);
+          const r = Math.random();
+          if (r < 0.55) obs.push({x:W+40, y:GROUND-38, w:46, h:38, k:"res"});
+          else if (r < 0.8) obs.push({x:W+40, y:GROUND-130, w:40, h:40, k:"arc"});
+          else for (let i=0;i<5;i++) bolts.push({x:W+40+i*46, y:GROUND-60-Math.sin(i/4*Math.PI)*110, on:true});
+        }
+        if (phaseT <= 0 && qi < NQ) startQuestion();
+      } else if (rings){
+        for (const r of rings) r.x -= v*dt;
+        const hy = p.y + 23;
+        for (const r of rings){ if (Math.abs(r.x - PX) < 34 && Math.abs(r.y - hy) < 60){ resolve(r.oi); return; } }
+        if (rings[0].x < PX - 60) resolve(-1);
+      }
+      for (const o of obs){ o.x -= v*dt; if (PX+12 > o.x && PX-12 < o.x+o.w && p.y+46 > o.y+4 && p.y < o.y+o.h-4) hurt(); }
+      obs = obs.filter(o => o.x > -80);
+      for (const b of bolts){ b.x -= v*dt; if (b.on && Math.abs(b.x-PX) < 26 && Math.abs(b.y-(p.y+23)) < 34){ b.on = false; score += 10; AudioSys.sfx("coin"); } }
+      bolts = bolts.filter(b => b.x > -40);
+      sparks.forEach(s => { s.x += s.vx*dt - v*dt*0.3; s.y += s.vy*dt; s.t -= dt; }); sparks = sparks.filter(s => s.t > 0);
+      speed = Math.min(470, speed + dt*4);
+      setHud(`Centrale Ampère · ${Math.min(qi+ (phase==="q"?1:0), NQ)}/${NQ}`, hearts, 3, score);
+    },
+    draw(){
+      const gr = g.createLinearGradient(0,0,0,H); gr.addColorStop(0,"#1a1000"); gr.addColorStop(0.7,"#4a2e00"); gr.addColorStop(1,"#2a1b00");
+      g.fillStyle = gr; g.fillRect(0,0,W,H);
+      // pylônes et fils en parallaxe
+      const o = -(dist*0.25) % 320;
+      g.save(); g.translate(0, 80);
+      for (let x=o-320; x<W+320; x+=320){
+        g.strokeStyle = "#7a5a1a"; g.lineWidth = 3;
+        g.beginPath(); g.moveTo(x+40, 420); g.lineTo(x+70, 170); g.lineTo(x+100, 420); g.moveTo(x+50,330); g.lineTo(x+90,330); g.moveTo(x+58,260); g.lineTo(x+82,260); g.moveTo(x+30,190); g.lineTo(x+110,190); g.stroke();
+        g.strokeStyle = "#ffc93c55"; g.lineWidth = 2;
+        for (const dy of [0,14]){ g.beginPath(); g.moveTo(x+30, 190+dy); g.quadraticCurveTo(x+190, 240+dy, x+350, 190+dy); g.stroke(); }
+      }
+      g.restore();
+      // éclairs de fond
+      if (Math.floor(T*1.3) % 5 === 0 && (T*1.3)%1 < 0.15){ g.fillStyle = "#ffc93c18"; g.fillRect(0,0,W,H); }
+      // sol : convoyeur
+      px(0, GROUND, W, H-GROUND, "#2d2006");
+      px(0, GROUND, W, 6, "#ffc93c");
+      const so = -(dist % 40);
+      for (let x=so; x<W; x+=40){ px(x, GROUND+14, 20, 8, "#ffc93c55"); px(x+10, GROUND+40, 4, 40, "#3d2d0a"); }
+      // éclairs collectables
+      for (const b of bolts){ if (!b.on) continue; g.fillStyle = "#ffc93c"; g.beginPath(); g.moveTo(b.x+4,b.y-14); g.lineTo(b.x-8,b.y+2); g.lineTo(b.x,b.y+2); g.lineTo(b.x-4,b.y+14); g.lineTo(b.x+8,b.y-2); g.lineTo(b.x,b.y-2); g.closePath(); g.fill(); }
+      // obstacles
+      for (const ob of obs){
+        if (ob.k === "res"){ px(ob.x, ob.y, ob.w, ob.h, "#d9cfb5"); [ "#8a4b14","#1a1424","#ff5d6c","#ffc93c" ].forEach((c,i)=>px(ob.x+6+i*10, ob.y, 5, ob.h, c)); px(ob.x-10, ob.y+ob.h/2-2, 10, 4, "#aaa"); px(ob.x+ob.w, ob.y+ob.h/2-2, 10, 4, "#aaa"); g.fillStyle="#1a1424"; font(11); g.textAlign="center"; g.fillText("Ω", ob.x+ob.w/2, ob.y-4); }
+        else { g.strokeStyle = Math.floor(T*20)%2 ? "#bfe3ff" : "#ffffff"; g.lineWidth = 3; g.beginPath(); let yy = ob.y; g.moveTo(ob.x, yy); for(let i=1;i<=6;i++) g.lineTo(ob.x + i*7, ob.y + (i%2? rnd(0,ob.h) : rnd(0,ob.h))); g.stroke(); g.fillStyle="#bfe3ff44"; g.beginPath(); g.arc(ob.x+20, ob.y+20, 26, 0, 7); g.fill(); }
+      }
+      if (rings) qPanel(cur, rings.map((r,k)=>({tag:`${"ABC"[k]} · ${r.tag}`, txt:cur.o[r.oi]})), "#ffc93c", 3);
+      // anneaux de réponse
+      if (rings) rings.forEach((r,k) => {
+        const lab = "ABC"[k];
+        g.strokeStyle = "#5ee6a0"; g.lineWidth = 8; g.beginPath(); g.ellipse(r.x, r.y, 26, 44, 0, 0, 7); g.stroke();
+        g.strokeStyle = "#ffffff88"; g.lineWidth = 2; g.beginPath(); g.ellipse(r.x, r.y, 26, 44, 0, 0, 7); g.stroke();
+        g.fillStyle = "#fff"; font(26); g.textAlign = "center"; g.fillText(lab, r.x, r.y+9);
+        g.fillStyle = "#5ee6a0"; font(12); g.fillText(r.tag, r.x, r.y+62);
+      });
+      for (const s of sparks){ px(s.x, s.y, 4, 4, "#ffc93c"); }
+      // héros (traînée de vitesse)
+      if (!p.on) for (let i=1;i<4;i++){ g.globalAlpha = 0.15*(4-i); drawHero(PX - i*14, p.y, 1, T, {air:true}); } g.globalAlpha = 1;
+      drawHero(PX, p.y, 1, T, {run:p.on, air:!p.on, blink:p.inv>0});
+      // progression
+      const prog = (qi + (phase==="q" ? 0.5 : 0)) / NQ;
+      if (!rings){ px(W/2-200, 48, 400, 10, "#00000088"); px(W/2-200, 48, 400*prog, 10, "#ffc93c"); g.fillStyle="#fff"; font(14); g.textAlign="center"; g.fillText("Saute les résistances (Ω), évite les arcs. ↓ pour plonger plus vite.", W/2, 80); }
+    }
+  };
+}
+
+// ================= MONDE 3 : PLONGÉE (Sonde Terre & Espace) =================
+function DiveWorld(){
+  const WID = "terre", TOP = 215;
+  const ZONES = [
+    {name:"Espace",       sky:["#05061a","#14174a"], n:2, haz:"débris"},
+    {name:"Atmosphère",   sky:["#3d86c9","#a9d4f2"], n:3, haz:"smog"},
+    {name:"Hydrosphère",  sky:["#0b5f73","#06283a"], n:3, haz:"plastique"},
+    {name:"Lithosphère",  sky:["#6b4a2b","#2a1a0e"], n:3, haz:"pétrole"}
+  ];
+  const plan = [];
+  ZONES.forEach((z,zi) => freshSet("terre", z.n, q => q.z === zi).forEach(q => plan.push({zi, q})));
+  const p = {x:W/2, y:360, vx:0, vy:0, inv:0};
+  let qi = 0, hearts = 4, score = 0, right = 0, bubbles = [], haz = [], done = false, depth = 0, transit = 0, flash = 0;
+  const zoneOf = () => plan[Math.min(qi, plan.length-1)].zi;
+
+  function setup(){
+    const {q} = plan[qi];
+    const order = shuffle([0,1,2,3]);
+    bubbles = order.map((oi,k) => ({oi, n:k+1, x: 120 + k*(W-240)/3, y: rnd(TOP+60, H-80), vx: rnd(-40,40), vy: rnd(-40,40), r:34}));
+    haz = [];
+    const nh = 2 + zoneOf();
+    for (let i=0;i<nh;i++) haz.push({x: rnd(60, W-60), y: rnd(TOP+40, H-40), vx: rnd(-90,90), vy: rnd(-60,60), r: 20, ph: rnd(0,6)});
+    p.x = W/2; p.y = H - 70;
+    haz = haz.filter(h => Math.hypot(h.x-p.x, h.y-p.y) > 140);
+  }
+  function hurt(){ if (p.inv > 0) return; hearts--; p.inv = 1.5; AudioSys.sfx("hit"); if (hearts <= 0){ done = true; gameOver(WID, "La sonde est hors service ! Retente la descente."); } }
+  function pick(oi){
+    const q = plan[qi].q;
+    if (oi === q.a){ right++; score += 120; }
+    bubbles = [];
+    explain(WID, q, oi, () => {
+      const prevZ = plan[qi].zi; qi++;
+      if (qi >= plan.length){ done = true; const st = right >= 10 ? 3 : right >= 7 ? 2 : 1; finishWorld(WID, st, `${right}/${plan.length} bulles correctes, de l'espace jusqu'au sol · ${score} points.`); return; }
+      if (plan[qi].zi !== prevZ){ transit = 1.6; } else setup();
+    });
+  }
+  return {
+    world:WID,
+    enter(){ hud(true); AudioSys.play("terre"); setup(); },
+    update(dt){
+      if (done) return;
+      const target = zoneOf();
+      if (transit > 0){
+        transit -= dt; depth += (target - depth) * Math.min(1, dt*3);
+        p.y += (H/2 - p.y)*dt*2;
+        if (transit <= 0){ depth = target; setup(); }
+        setHud(`Sonde · ${ZONES[target].name}`, hearts, 4, score); return;
+      }
+      const a = 900;
+      p.vx += ((keys.right?1:0) - (keys.left?1:0)) * a * dt;
+      p.vy += ((keys.down?1:0) - (keys.up||keys.jump?1:0)) * a * dt;
+      p.vx *= Math.pow(0.08, dt); p.vy *= Math.pow(0.08, dt);
+      p.x = clamp(p.x + p.vx*dt, 30, W-30); p.y = clamp(p.y + p.vy*dt, TOP+30, H-26);
+      if (p.inv > 0) p.inv -= dt;
+      for (const b of bubbles){
+        b.x += b.vx*dt; b.y += b.vy*dt + Math.sin(T*2 + b.n)*12*dt;
+        if (b.x < b.r || b.x > W-b.r) b.vx *= -1; if (b.y < TOP+b.r || b.y > H-b.r) b.vy *= -1;
+        b.x = clamp(b.x, b.r, W-b.r); b.y = clamp(b.y, TOP+b.r, H-b.r);
+      }
+      for (const h of haz){
+        h.x += h.vx*dt; h.y += h.vy*dt;
+        if (h.x < h.r || h.x > W-h.r) h.vx *= -1; if (h.y < TOP+h.r || h.y > H-h.r) h.vy *= -1;
+        if (Math.hypot(h.x-p.x, h.y-p.y) < h.r + 20) hurt();
+      }
+      for (const b of bubbles) if (Math.hypot(b.x-p.x, b.y-p.y) < b.r + 18){ pick(b.oi); break; }
+      depth = target;
+      setHud(`Sonde · ${ZONES[target].name} · ${qi+1}/${plan.length}`, hearts, 4, score);
+    },
+    draw(){
+      // fond selon la profondeur (interpolée pendant les transitions)
+      const z0 = Math.floor(depth), z1 = Math.min(3, z0+1), f = depth - z0;
+      const mix = (a,b,t) => { const pa = parseInt(a.slice(1),16), pb = parseInt(b.slice(1),16); const r = (pa>>16)*(1-t)+(pb>>16)*t, gg=((pa>>8)&255)*(1-t)+((pb>>8)&255)*t, bb=(pa&255)*(1-t)+(pb&255)*t; return `rgb(${r|0},${gg|0},${bb|0})`; };
+      const A = ZONES[z0].sky, B = ZONES[z1].sky;
+      const gr = g.createLinearGradient(0,0,0,H); gr.addColorStop(0, mix(A[0],B[0],f)); gr.addColorStop(1, mix(A[1],B[1],f));
+      g.fillStyle = gr; g.fillRect(0,0,W,H);
+      const zi = Math.round(depth);
+      if (zi === 0){ for (let i=0;i<90;i++) px((i*173)%W, (i*97)%H, 2, 2, i%7 ? "#ffffff99" : "#ffc93c"); g.fillStyle = "#e8eef2"; g.beginPath(); g.arc(820, 230, 46, 0, 7); g.fill(); g.fillStyle="#c7d0d8"; g.beginPath(); g.arc(805,215,9,0,7); g.arc(838,250,6,0,7); g.fill(); g.fillStyle="#ffc93c"; g.beginPath(); g.arc(90, 230, 56, 0, 7); g.fill(); g.strokeStyle="#ffc93c55"; g.lineWidth=3; for(let i=0;i<12;i++){ const t=i/12*6.28+T*0.2; g.beginPath(); g.moveTo(90+Math.cos(t)*66, 230+Math.sin(t)*66); g.lineTo(90+Math.cos(t)*90, 230+Math.sin(t)*90); g.stroke(); } }
+      else if (zi === 1){ for (let i=0;i<5;i++){ const cx = ((i*230 + T*20) % (W+200)) - 100, cy = 200 + (i%3)*90; g.fillStyle = "#ffffffcc"; g.beginPath(); g.arc(cx,cy,30,0,7); g.arc(cx+30,cy-10,36,0,7); g.arc(cx+64,cy,28,0,7); g.fill(); } g.strokeStyle="#ffffff55"; g.lineWidth=2; for(let i=0;i<8;i++){ const y = 180+i*45; g.beginPath(); g.moveTo(((T*120+i*90)%W), y); g.lineTo(((T*120+i*90)%W)+60, y); g.stroke(); } }
+      else if (zi === 2){ for (let i=0;i<40;i++){ const bx = (i*131)%W, by = H - ((T*30 + i*53) % (H-TOP)); px(bx, by, 4, 4, "#ffffff44"); } g.fillStyle="#ffffff10"; for(let i=0;i<6;i++){ g.beginPath(); g.moveTo(i*180+((T*10)%180),TOP); g.lineTo(i*180+60+((T*10)%180),TOP); g.lineTo(i*180-80+((T*10)%180),H); g.lineTo(i*180-160+((T*10)%180),H); g.fill(); } }
+      else { const bands = [["O","#3a2716"],["A","#5a3a1f"],["B","#7a5634"],["C","#8f8a80"]]; bands.forEach((b,i) => { const y0 = TOP + i*(H-TOP)/4; px(0, y0, W, (H-TOP)/4, b[1]); g.fillStyle="#ffffff55"; font(22); g.textAlign="left"; g.fillText("Horizon "+b[0], 12, y0+30); for(let k=0;k<10;k++) px((k*97+i*41)%W, y0 + 20 + (k*13)%60, 6+i*2, 4+i, "#00000033"); }); }
+      // dangers
+      for (const h of haz){
+        const zz = ZONES[zi].haz;
+        if (zz === "débris"){ g.fillStyle="#8a8f99"; g.beginPath(); for(let i=0;i<7;i++){ const t=i/7*6.28+h.ph+T; const rr = h.r*(0.7+0.3*Math.sin(i*3)); g.lineTo(h.x+Math.cos(t)*rr, h.y+Math.sin(t)*rr); } g.fill(); }
+        else if (zz === "smog"){ g.fillStyle="#5b5047cc"; g.beginPath(); g.arc(h.x,h.y,h.r,0,7); g.arc(h.x+14,h.y-8,h.r*0.8,0,7); g.arc(h.x-14,h.y+4,h.r*0.7,0,7); g.fill(); }
+        else if (zz === "plastique"){ g.fillStyle="#e8eef2cc"; g.beginPath(); g.moveTo(h.x-16,h.y-14); g.lineTo(h.x+16,h.y-14); g.lineTo(h.x+20,h.y+16+Math.sin(T*4+h.ph)*4); g.lineTo(h.x-20,h.y+16-Math.sin(T*4+h.ph)*4); g.closePath(); g.fill(); px(h.x-12,h.y-22,6,10,"#e8eef2"); px(h.x+6,h.y-22,6,10,"#e8eef2"); }
+        else { g.fillStyle="#111"; g.beginPath(); g.ellipse(h.x,h.y,h.r+6,h.r-4,Math.sin(T+h.ph)*0.4,0,7); g.fill(); g.fillStyle="#7a5aff55"; g.beginPath(); g.ellipse(h.x-6,h.y-4,8,4,0,0,7); g.fill(); }
+      }
+      // bulles de réponse
+      for (const b of bubbles){
+        g.fillStyle = "#5ee6c833"; g.beginPath(); g.arc(b.x,b.y,b.r,0,7); g.fill();
+        g.strokeStyle = "#5ee6c8"; g.lineWidth = 4; g.beginPath(); g.arc(b.x,b.y,b.r,0,7); g.stroke();
+        px(b.x-16, b.y-20, 7, 7, "#ffffffaa");
+        g.fillStyle = "#fff"; font(30); g.textAlign = "center"; g.fillText(b.n, b.x, b.y+11);
+      }
+      // sonde
+      if (!(p.inv > 0 && Math.floor(T*20)%2)){
+        g.save(); g.translate(p.x, p.y); g.rotate(clamp(p.vx/900, -0.3, 0.3));
+        px(-26,-10,52,24,"#e9f1f5"); px(-26,10,52,4,"#9fb4c0"); px(-34,-4,8,12,"#ffc93c");
+        g.fillStyle="#8fd3ff"; g.beginPath(); g.arc(0,-10,16,Math.PI,0); g.fill();
+        px(-5,-20,10,8,"#f2c79a"); px(-6,-21,12,3,"#4a2b1a"); px(-5,-17,10,2,"#1a1424");
+        px(18,-2,8,8,"#ff5d6c");
+        if (Math.floor(T*6)%2) px(-42,0,8,4,"#ffc93c");
+        g.restore();
+      }
+      if (transit > 0){
+        g.fillStyle = "#000a"; g.fillRect(0, H/2-50, W, 100);
+        g.fillStyle = "#5ee6c8"; font(34); g.textAlign = "center"; g.fillText("Descente vers : " + ZONES[zoneOf()].name, W/2, H/2+12);
+      } else if (bubbles.length){
+        const q = plan[qi].q;
+        qPanel(q, q.o.map((t,i)=>({tag:String(bubbles.findIndex(b=>b.oi===i)+1), txt:t})).sort((a,b)=>a.tag-b.tag), "#5ee6c8", 2);
+      }
+      // jauge de profondeur
+      px(W-22, TOP+10, 8, H-TOP-30, "#00000066");
+      px(W-22, TOP+10 + (H-TOP-30)*(qi/plan.length), 8, 8, "#5ee6c8");
+    }
+  };
+}
+// Clics / touchers sur le canevas (coordonnées logiques)
+cv.addEventListener("pointerdown", e => {
+  AudioSys.unlock();
+  if (!scene || !scene.onClick || paused) return;
+  const r = cv.getBoundingClientRect();
+  scene.onClick((e.clientX - r.left) * W / r.width, (e.clientY - r.top) * H / r.height);
+});
+
+// ================= MONDE 4 : COMBAT RPG (Forêt trophique) =================
+function RpgWorld(){
+  const WID = "viv";
+  const pool = c => freshSet("viv", 6, q => c.includes(q.c));
+  const FOES = [
+    {name:"Moule envahissante", hp:70, atk:"filtre toute la nourriture du lac", qs:pool(["pop","commu"]), draw:drawMussel, intro:"Une espèce envahissante bouleverse la communauté !"},
+    {name:"Brochet au mercure", hp:70, atk:"projette des gouttelettes de Hg", qs:pool(["ecosys","toxico"]), draw:drawPike, intro:"Un prédateur contaminé remonte la chaîne alimentaire !"},
+    {name:"L'Empreinte géante", hp:100, atk:"écrase la forêt sous sa consommation", qs:freshSet("viv", 6), draw:drawFoot, intro:"Le boss final : l'Empreinte écologique démesurée !"}
+  ];
+  let fi = 0, foe = null, hp = 100, mistakes = 0, score = 0, done = false;
+  let state = "msg", msgs = [], msgT = 0, typed = 0, sel = 0, shakeFoe = 0, shakeMe = 0, flashFoe = 0, floats = [], used = new Set();
+  const ACTIONS = [{t:"Attaque Savoir", d:"Bonne réponse : 35 dégâts"}, {t:"Photosynthèse", d:"Bonne réponse : +30 PV"}, {t:"Carnet", d:"Relire les fiches"}];
+
+  function say(text, fn){ msgs.push({text, fn}); if (state !== "msg"){ state = "msg"; } if (msgs.length === 1){ typed = 0; msgT = 0; } }
+  function nextMsg(){
+    const m = msgs.shift(); typed = 0; msgT = 0;
+    if (m && m.fn) m.fn();
+    if (!msgs.length && state === "msg" && !done) state = "menu";
+  }
+  function loadFoe(){ foe = Object.assign({}, FOES[fi]); foe.max = foe.hp; foe.qs = FOES[fi].qs.slice(); say(foe.intro); say(`${foe.name} attaque ! Que fais-tu ?`); }
+  function nextQ(){
+    let q = foe.qs.find(q => !used.has(q)) || shuffle(Q.viv).find(q => !used.has(q));
+    if (!q){ used.clear(); q = shuffle(Q.viv)[0]; }
+    used.add(q); return q;
+  }
+  function act(i){
+    if (i === 2){ openCodex(WID); return; }
+    state = "wait";
+    const q = nextQ();
+    ask(WID, q, ok => {
+      if (ok){
+        if (i === 0){
+          const dmg = 35; foe.hp = Math.max(0, foe.hp - dmg); shakeFoe = 0.4; flashFoe = 0.4; score += 100; AudioSys.sfx("hit");
+          floats.push({x:690, y:150, t:1, txt:"-"+dmg, c:"#ff5d6c"});
+          say(`Ton savoir frappe ! ${foe.name} perd ${dmg} PV.`);
+        } else {
+          const h = Math.min(30, 100-hp); hp += h; score += 60;
+          floats.push({x:240, y:330, t:1, txt:"+"+h, c:"#5ee6a0"});
+          say(h ? `La photosynthèse te redonne ${h} PV.` : "Tes PV sont déjà au maximum, mais l'énergie lumineuse te protège.");
+        }
+        say("Ta bonne réponse bloque la riposte !");
+      } else {
+        mistakes++;
+        say(`${foe.name} ${foe.atk} !`, () => { hp = Math.max(0, hp - 25); shakeMe = 0.4; AudioSys.sfx("hit"); floats.push({x:240, y:330, t:1, txt:"-25", c:"#ff5d6c"}); });
+      }
+      afterTurn();
+    }, {kicker: i === 0 ? `Attaque Savoir · contre ${foe.name}` : "Photosynthèse · soin"});
+  }
+  function afterTurn(){
+    msgs.push({text:"", fn:() => {
+      if (hp <= 0){ done = true; gameOver(WID, "La forêt a besoin de toi ! Relis les fiches d'écologie et reviens."); return; }
+      if (foe.hp <= 0){
+        AudioSys.sfx("win");
+        say(`${foe.name} est vaincu ! L'écosystème retrouve son équilibre.`, () => {
+          fi++;
+          if (fi >= FOES.length){ done = true; const st = mistakes <= 1 ? 3 : mistakes <= 3 ? 2 : 1; finishWorld(WID, st, `Les trois menaces sont vaincues avec ${mistakes} erreur(s) · ${score} points.`); }
+          else { hp = Math.min(100, hp + 20); loadFoe(); }
+        });
+      }
+      if (!msgs.length) state = "menu";
+    }, auto:true});
+    state = "msg"; typed = 0; msgT = 0;
+  }
+
+  // ---- dessins ----
+  function drawMussel(x, y){
+    for (let i=-1;i<=1;i+=2){ g.fillStyle = "#3b3326"; g.beginPath(); g.ellipse(x+i*70, y+40, 22, 14, i*0.3, 0, 7); g.fill(); }
+    g.fillStyle = "#e9dcc0"; g.beginPath(); g.ellipse(x, y, 70, 44, -0.2, 0, 7); g.fill();
+    g.save(); g.beginPath(); g.ellipse(x, y, 70, 44, -0.2, 0, 7); g.clip();
+    g.fillStyle = "#3b3326"; for (let i=-80;i<80;i+=18){ g.beginPath(); g.moveTo(x+i, y-50); g.lineTo(x+i+8, y-50); g.lineTo(x+i+30, y+50); g.lineTo(x+i+22, y+50); g.fill(); }
+    g.restore();
+    px(x-30, y-12, 18, 16, "#fff"); px(x+10, y-12, 18, 16, "#fff"); px(x-22, y-6, 8, 8, "#1a1424"); px(x+18, y-6, 8, 8, "#1a1424");
+    px(x-34, y-20, 22, 4, "#1a1424"); px(x+8, y-20, 22, 4, "#1a1424");
+    px(x-16, y+16, 34, 6, "#7a2a2a");
+  }
+  function drawPike(x, y){
+    g.fillStyle = "#4f7a3a"; g.beginPath(); g.ellipse(x, y, 100, 36, 0, 0, 7); g.fill();
+    g.fillStyle = "#c9d98a"; g.beginPath(); g.ellipse(x, y+14, 86, 16, 0, 0, 7); g.fill();
+    g.fillStyle = "#4f7a3a"; g.beginPath(); g.moveTo(x+90, y); g.lineTo(x+140, y-34); g.lineTo(x+140, y+34); g.closePath(); g.fill();
+    for (let i=0;i<8;i++) px(x-60+i*16, y-18+(i%2)*10, 8, 6, "#a8c96a");
+    g.fillStyle = "#fff"; g.beginPath(); g.arc(x-70, y-8, 10, 0, 7); g.fill(); px(x-74, y-10, 6, 6, "#1a1424");
+    px(x-100, y+8, 30, 4, "#1a1424"); for (let i=0;i<4;i++) px(x-98+i*7, y+4, 3, 4, "#fff");
+    for (let i=0;i<5;i++){ const dx = Math.sin(T*2+i)*6; g.fillStyle = "#b9c4d0"; g.beginPath(); g.arc(x-30+i*18+dx, y-4+(i%2)*8, 5, 0, 7); g.fill(); }
+    g.fillStyle = "#1a1424"; font(14); g.textAlign = "center"; g.fillText("Hg", x+8, y+40);
+  }
+  function drawFoot(x, y){
+    const s = 1 + Math.sin(T*2)*0.03;
+    g.save(); g.translate(x, y); g.scale(s, s);
+    g.fillStyle = "#4d4a52"; g.beginPath(); g.ellipse(0, 20, 64, 82, 0.15, 0, 7); g.fill();
+    [[-46,-64,16],[-18,-82,18],[12,-86,17],[40,-74,15],[60,-52,12]].forEach(([a,b,r]) => { g.beginPath(); g.arc(a,b,r,0,7); g.fill(); });
+    px(-50, -10, 12, 46, "#2b2830"); px(30, -20, 12, 56, "#2b2830");
+    for (let i=0;i<3;i++){ const yy = -30 - ((T*40 + i*20) % 60); g.fillStyle = "#77737d88"; g.beginPath(); g.arc(-44 + Math.sin(T+i)*4, yy, 8+i*2, 0, 7); g.fill(); g.beginPath(); g.arc(36 + Math.cos(T+i)*4, yy-10, 8+i*2, 0, 7); g.fill(); }
+    px(-26, 10, 16, 14, "#ffc93c"); px(8, 10, 16, 14, "#ffc93c"); px(-20, 14, 6, 8, "#1a1424"); px(14, 14, 6, 8, "#1a1424");
+    px(-22, 44, 44, 6, "#1a1424");
+    g.restore();
+  }
+  function bar(x, y, w, name, v, max, col){
+    px(x, y, w, 58, "#f6ffe4"); px(x, y, w, 3, "#2f3a12"); px(x, y+55, w, 3, "#2f3a12"); px(x, y, 3, 58, "#2f3a12"); px(x+w-3, y, 3, 58, "#2f3a12");
+    g.fillStyle = "#2f3a12"; font(18); g.textAlign = "left"; g.fillText(name, x+12, y+24);
+    g.textAlign = "right"; font(14); g.fillText(`PV ${Math.ceil(v)}/${max}`, x+w-12, y+24);
+    px(x+12, y+34, w-24, 12, "#2f3a1255"); px(x+12, y+34, (w-24)*v/max, 12, v/max > 0.5 ? col : v/max > 0.25 ? "#ffc93c" : "#ff5d6c");
+  }
+
+  return {
+    world:WID,
+    enter(){ hud(true); AudioSys.play("viv"); loadFoe(); },
+    onClick(x, y){
+      if (state === "menu"){ for (let i=0;i<3;i++){ const bx = 506 + (i%2)*212, by = 418 + Math.floor(i/2)*52; if (x>bx && x<bx+202 && y>by && y<by+44){ sel = i; act(i); } } }
+      else if (state === "msg") advance();
+    },
+    update(dt){
+      if (done) return;
+      shakeFoe = Math.max(0, shakeFoe - dt); shakeMe = Math.max(0, shakeMe - dt); flashFoe = Math.max(0, flashFoe - dt);
+      floats.forEach(f => f.t -= dt); floats = floats.filter(f => f.t > 0);
+      if (state === "msg"){
+        const m = msgs[0];
+        if (!m){ state = "menu"; }
+        else if (m.auto){ nextMsg(); }
+        else { typed += dt*60; msgT += dt; if (consume("jump") || (msgT > 2.6 && typed >= m.text.length)) advance(); }
+      } else if (state === "menu"){
+        if (consume("up") || consume("left")) sel = (sel+2)%3;
+        if (consume("down") || consume("right")) sel = (sel+1)%3;
+        if (consume("jump")) act(sel);
+      }
+      setHud(`Forêt trophique · combat ${fi+1}/3`, Math.ceil(hp/25), 4, score);
+    },
+    draw(){
+      // forêt en couches
+      const gr = g.createLinearGradient(0,0,0,H); gr.addColorStop(0,"#d9eeb8"); gr.addColorStop(1,"#9fca78"); g.fillStyle = gr; g.fillRect(0,0,W,H);
+      for (let layer=0; layer<3; layer++){
+        const col = ["#7fae5a","#4f7f34","#2f5a1e"][layer], base = 230 + layer*40;
+        for (let i=0;i<14;i++){ const x = (i*83 + layer*37 + Math.sin(T*0.3+i)*2) % (W+80) - 40; const h = 120 + ((i*37+layer*13)%60);
+          px(x+18, base-10, 10, 70, "#5a3a1a"); g.fillStyle = col; g.beginPath(); g.moveTo(x, base); g.lineTo(x+23, base-h); g.lineTo(x+46, base); g.fill(); g.beginPath(); g.moveTo(x+4, base-30); g.lineTo(x+23, base-h-20); g.lineTo(x+42, base-30); g.fill(); }
+      }
+      px(0, 330, W, H-330, "#7aa04a");
+      g.fillStyle = "#5d7d2a"; g.beginPath(); g.ellipse(690, 250, 150, 30, 0, 0, 7); g.fill();
+      g.beginPath(); g.ellipse(240, 400, 150, 28, 0, 0, 7); g.fill();
+      // feuilles qui tombent
+      for (let i=0;i<14;i++){ const lx = (i*97 + T*30) % W, ly = (i*61 + T*50) % H; px(lx, ly, 6, 4, i%2 ? "#b6e36a" : "#e3a83a"); }
+      if (foe){
+        const sx = shakeFoe ? rnd(-6,6) : 0;
+        if (foe.hp > 0 || shakeFoe){ if (flashFoe && Math.floor(T*30)%2) g.globalAlpha = 0.3; foe.draw(690 + sx, 170 + Math.sin(T*2)*4); g.globalAlpha = 1; }
+        bar(60, 50, 330, foe.name, foe.hp, foe.max, "#5ee6a0");
+      }
+      const mx = shakeMe ? rnd(-6,6) : 0;
+      g.save(); g.translate(240+mx, 318); g.scale(1.6, 1.6); drawHero(0, 0, 1, T, {coat:"#d8f0b0"}); g.restore();
+      bar(560, 290, 340, "Garde-forêt", hp, 100, "#5ee6a0");
+      for (const f of floats){ g.fillStyle = f.c; font(30); g.textAlign = "center"; g.fillText(f.txt, f.x, f.y - (1-f.t)*50); }
+      // boîte de dialogue
+      px(20, 400, W-40, 126, "#f6ffe4"); px(20, 400, W-40, 4, "#2f3a12"); px(20, 522, W-40, 4, "#2f3a12"); px(20, 400, 4, 126, "#2f3a12"); px(W-24, 400, 4, 126, "#2f3a12");
+      g.fillStyle = "#2f3a12";
+      if (state === "msg" && msgs[0] && !msgs[0].auto){ font(20, "b"); wrapText(msgs[0].text.slice(0, Math.floor(typed)), 44, 440, 860, 26, "left"); if (typed >= msgs[0].text.length && Math.floor(T*3)%2){ g.textAlign="right"; g.fillText("▼", W-48, 510); } }
+      else if (state === "menu"){
+        font(19, "b"); g.textAlign = "left"; wrapText("Choisis une action. Chaque action pose une question d'écologie.", 44, 440, 430, 26, "left");
+        ACTIONS.forEach((a,i) => { const bx = 506 + (i%2)*212, by = 418 + Math.floor(i/2)*52;
+          px(bx, by, 202, 44, i===sel ? "#2f3a12" : "#dfeec2"); g.fillStyle = i===sel ? "#f6ffe4" : "#2f3a12"; font(17); g.textAlign = "left"; g.fillText((i===sel?"▸ ":"")+a.t, bx+10, by+20); font(12,"b"); g.fillText(a.d, bx+10, by+37); });
+      }
+    }
+  };
+  function advance(){ const m = msgs[0]; if (!m) return; if (typed < m.text.length){ typed = m.text.length; return; } nextMsg(); }
+}
+// ================= MONDE 5 : ATELIER D'ANALYSE TECHNOLOGIQUE =================
+function AtelierWorld(){
+  const WID = "tech", LW = 560, LH = 440;
+  const root = $("atelier");
+  root.innerHTML = `<div class="at-grid"><div class="at-left"><canvas id="atCv"></canvas><div class="at-tag" id="atTag"></div></div><div class="at-right" id="atPanel"></div></div>`;
+  const ac = $("atCv"), x = ac.getContext("2d");
+  let first = 0, total = 0, si = 0, answered = false, t0 = 0, done = false;
+  let gearA = 40, gearB = 20, clamp01 = 0, hi = 0;
+
+  // ---------- primitives de dessin (coordonnées 560 × 440) ----------
+  const INK = "#bfe3ff", ACC = "#ff9a52", STEEL = "#9fb4c0";
+  function gear(cx, cy, r, teeth, ang, col){
+    x.save(); x.translate(cx, cy); x.rotate(ang);
+    x.fillStyle = col;
+    for (let i=0;i<teeth;i++){ x.save(); x.rotate(i/teeth*Math.PI*2); x.fillRect(-4, -r-9, 8, 12); x.restore(); }
+    x.beginPath(); x.arc(0,0,r,0,7); x.fill();
+    x.fillStyle = "#16324f"; x.beginPath(); x.arc(0,0,r*0.62,0,7); x.fill();
+    x.fillStyle = col; for (let i=0;i<4;i++){ x.save(); x.rotate(i*Math.PI/2); x.fillRect(-4, 0, 8, r*0.64); x.restore(); }
+    x.beginPath(); x.arc(0,0,7,0,7); x.fill(); x.fillStyle = "#16324f"; x.beginPath(); x.arc(0,0,3,0,7); x.fill();
+    x.restore();
+  }
+  function label(tx, ty, s, c){ x.fillStyle = c || INK; x.font = `600 15px "Pixelify Sans", monospace`; x.textAlign = "center"; x.fillText(s, tx, ty); }
+  function arrowArc(cx, cy, r, dir){ x.strokeStyle = ACC; x.lineWidth = 2; x.beginPath(); const a0 = -2.2, a1 = -0.9; x.arc(cx, cy, r, a0, a1, dir<0); x.stroke(); const a = dir>0 ? a1 : a0; const ex = cx + Math.cos(a)*r, ey = cy + Math.sin(a)*r; x.fillStyle = ACC; x.beginPath(); x.arc(ex, ey, 4, 0, 7); x.fill(); }
+
+  const MECH = {
+    engrenage(t){ const a = t*1.2; gear(200, 220, 80, 20, a, ACC); gear(200+80+46+12, 220, 46, 12, -a*80/46 + 0.13, INK); arrowArc(200,220,108,1); arrowArc(338,220,74,-1); label(200, 360, "Organe menant"); label(338, 360, "Organe mené"); },
+    poulies(t){ const a = t*1.2, c1 = [170,220], c2 = [400,220], r1 = 74, r2 = 40;
+      x.strokeStyle = "#1e2633"; x.lineWidth = 10; x.beginPath(); x.moveTo(c1[0], c1[1]-r1-5); x.lineTo(c2[0], c2[1]-r2-5); x.moveTo(c1[0], c1[1]+r1+5); x.lineTo(c2[0], c2[1]+r2+5); x.stroke();
+      x.beginPath(); x.arc(c1[0],c1[1],r1+5,Math.PI/2,Math.PI*1.5); x.stroke(); x.beginPath(); x.arc(c2[0],c2[1],r2+5,-Math.PI/2,Math.PI/2); x.stroke();
+      x.strokeStyle = ACC; x.lineWidth = 3; x.setLineDash([8,10]); x.lineDashOffset = -t*60; x.beginPath(); x.moveTo(c1[0], c1[1]-r1-5); x.lineTo(c2[0], c2[1]-r2-5); x.stroke(); x.setLineDash([]);
+      [[c1,r1,a],[c2,r2,a*r1/r2]].forEach(([c,r,an]) => { x.fillStyle = STEEL; x.beginPath(); x.arc(c[0],c[1],r,0,7); x.fill(); x.fillStyle="#16324f"; x.beginPath(); x.arc(c[0],c[1],r-10,0,7); x.fill(); x.strokeStyle = STEEL; x.lineWidth = 6; for (let i=0;i<3;i++){ const q = an + i*2.094; x.beginPath(); x.moveTo(c[0],c[1]); x.lineTo(c[0]+Math.cos(q)*(r-10), c[1]+Math.sin(q)*(r-10)); x.stroke(); } });
+      arrowArc(c1[0],c1[1],r1+24,1); arrowArc(c2[0],c2[1],r2+24,1); label(170, 340, "Organe menant"); label(400, 340, "Organe mené"); },
+    cremaillere(t){ const a = Math.sin(t*1.1)*1.6, r = 60; gear(280, 190, r, 16, a, ACC);
+      const off = a*(r+4); x.fillStyle = INK; x.fillRect(80+off, 266, 400, 22); for (let i=0;i<20;i++) x.fillRect(84+off+i*20, 256, 9, 12);
+      label(280, 330, "Organe menant"); label(280, 352, "Organe mené ⟷"); },
+    bielle(t){ const a = t*1.6, cx = 150, cy = 220, R = 60, L = 190;
+      const px2 = cx + Math.cos(a)*R, py2 = cy + Math.sin(a)*R, pxs = px2 + Math.sqrt(L*L - (py2-cy)*(py2-cy));
+      x.strokeStyle = STEEL; x.lineWidth = 3; x.strokeRect(330, 180, 200, 80);
+      x.fillStyle = STEEL; x.beginPath(); x.arc(cx,cy,R+10,0,7); x.fill(); x.fillStyle = "#16324f"; x.beginPath(); x.arc(cx,cy,10,0,7); x.fill();
+      x.fillStyle = ACC; x.fillRect(pxs, 186, 60, 68);
+      x.strokeStyle = INK; x.lineWidth = 12; x.lineCap = "round"; x.beginPath(); x.moveTo(px2, py2); x.lineTo(pxs+10, cy); x.stroke(); x.lineCap = "butt";
+      x.fillStyle = "#1e2633"; x.beginPath(); x.arc(px2,py2,6,0,7); x.fill();
+      label(cx, 330, "Organe menant"); label(430, 330, "Organe mené"); },
+    came(t){ const a = t*1.4, cx = 280, cy = 290; const rf = th => 52 + 34*Math.pow(Math.max(0, Math.cos(th)), 2);
+      x.fillStyle = ACC; x.beginPath(); for (let i=0;i<=60;i++){ const th = i/60*Math.PI*2; const rr = rf(th); x.lineTo(cx + Math.cos(th + a)*rr, cy + Math.sin(th + a)*rr); } x.fill();
+      x.fillStyle = "#16324f"; x.beginPath(); x.arc(cx,cy,8,0,7); x.fill();
+      const top = cy - rf(-Math.PI/2 - a);
+      x.fillStyle = INK; x.fillRect(cx-9, top-170, 18, 170); x.fillRect(cx-20, top-6, 40, 8);
+      x.strokeStyle = STEEL; x.lineWidth = 3; x.strokeRect(cx-24, 70, 48, 30);
+      label(cx+130, 300, "Organe menant"); label(cx+120, 120, "Organe mené"); }
+  };
+  function drawGears(t){
+    const rA = 14 + gearA*1.5, rB = 14 + gearB*1.5, ax = 60 + rA + 14, bx = ax + rA + rB + 14, cy = 210;
+    const s = Math.min(1, (LW-30)/(bx + rB + 20));
+    x.save(); x.scale(s, s); x.translate(0, (1-s)*200);
+    const wA = 0.9, wB = wA * gearA/gearB;
+    gear(ax, cy, rA, gearA, t*wA, ACC); gear(bx, cy, rB, gearB, -t*wB + 0.1, INK);
+    x.restore();
+    label(150, 380, `Menante : ${gearA} dents`, ACC); label(410, 380, `Menée : ${gearB} dents`);
+    label(LW/2, 412, `60 tr/min  →  ${Math.round(60*gearA/gearB)} tr/min`);
+  }
+  function drawVise(t){
+    const gap = 150 - clamp01*112 + Math.sin(t*2)*(clamp01<1 ? 0 : 0);
+    x.fillStyle = "#5b3b22"; x.fillRect(20, 300, 520, 34); x.fillStyle = "#3a2616"; x.fillRect(20, 330, 520, 8);
+    x.fillStyle = "#6f7f8f"; x.fillRect(150, 268, 300, 22); // glissière
+    const fx = 420; x.fillStyle = "#4e6a82"; x.fillRect(fx, 150, 80, 150); x.fillRect(fx-10, 280, 110, 20);
+    x.fillStyle = "#c9d7e0"; x.fillRect(fx, 150, 12, 70);
+    const mx = fx - gap - 70; x.fillStyle = "#5f7d98"; x.fillRect(mx, 160, 70, 108); x.fillStyle = "#c9d7e0"; x.fillRect(mx+58, 160, 12, 60);
+    x.fillStyle = "#b07a3c"; x.fillRect(mx+70, 172, gap, 46); x.fillStyle="#8a5a28"; for(let i=0;i<4;i++) x.fillRect(mx+70, 180+i*10, gap, 2);
+    x.fillStyle = "#9fb4c0"; x.fillRect(mx-120, 233, fx - mx + 150, 14);
+    x.strokeStyle = "#5d6d7a"; x.lineWidth = 2; for (let i=0;i<30;i++){ const xx = mx - 116 + i*((fx-mx+146)/30) + ((t*14*(clamp01<1?1:0)) % 8); x.beginPath(); x.moveTo(xx, 233); x.lineTo(xx+6, 247); x.stroke(); }
+    const hx = mx - 130, swing = Math.cos(t*3*(clamp01<1?1:0.0001))*48;
+    x.fillStyle = "#1e2633"; x.fillRect(hx-6, 240 - Math.abs(swing) - 6, 12, Math.abs(swing)*2 + 12); x.fillStyle = ACC; x.beginPath(); x.arc(hx, 240 - swing, 9, 0, 7); x.fill(); x.beginPath(); x.arc(hx, 240 + swing, 9, 0, 7); x.fill();
+    [[fx+20, 312],[fx+70, 312]].forEach(([bx,by]) => { x.fillStyle = "#c9d7e0"; x.fillRect(bx-7, by-4, 14, 10); x.fillRect(bx-3, by+6, 6, 20); });
+    const tags = [[fx+40, 130, 1, "Mors fixe (corps)"],[mx+35, 140, 2, "Mors mobile"],[mx-40, 222, 3, "Vis"],[hx, 175, 4, "Manivelle"],[fx+45, 372, 5, "Boulons"]];
+    tags.forEach(([tx, ty, n, nm]) => {
+      const on = hi === n;
+      x.fillStyle = on ? ACC : "#0d1b2b"; x.strokeStyle = on ? "#fff" : INK; x.lineWidth = 2;
+      x.beginPath(); x.arc(tx, ty, 13 + (on ? Math.sin(t*6)*2 : 0), 0, 7); x.fill(); x.stroke();
+      x.fillStyle = on ? "#1e2633" : INK; x.font = `700 15px "Pixelify Sans", monospace`; x.textAlign = "center"; x.fillText(n, tx, ty+5);
+    });
+    x.fillStyle = INK; x.font = `13px "Atkinson Hyperlegible", sans-serif`; x.textAlign = "left";
+    ["1 Mors fixe (corps)","2 Mors mobile","3 Vis","4 Manivelle","5 Boulons de fixation"].forEach((s,i) => x.fillText(s, 16 + Math.floor(i/3)*170, 24 + (i%3)*17));
+  }
+
+  // ---------- étapes ----------
+  const C = (name, opts, a, why, card) => ({name, opts, a, why, card});
+  const MECHS = [
+    {k:"engrenage", sys:"Engrenage", type:"Transmission", why:"Deux roues dentées en contact direct : la rotation est transmise, et les roues tournent en sens inverse."},
+    {k:"poulies", sys:"Poulies et courroie", type:"Transmission", why:"La courroie relie deux poulies qui tournent dans le même sens. Un glissement est possible."},
+    {k:"cremaillere", sys:"Pignon et crémaillère", type:"Transformation", why:"Rotation du pignon ↔ translation de la crémaillère. Le système est réversible."},
+    {k:"bielle", sys:"Bielle et manivelle", type:"Transformation", why:"Rotation de la manivelle ↔ translation alternative du piston (moteur, pompe). Réversible."},
+    {k:"came", sys:"Came et tige-poussoir", type:"Transformation", why:"La rotation de la came devient une translation alternative de la tige. Non réversible."}
+  ];
+  const SYS_NAMES = ["Engrenage","Poulies et courroie","Pignon et crémaillère","Bielle et manivelle","Came et tige-poussoir","Vis et écrou","Roue dentée et vis sans fin"];
+  const STEPS = [];
+  shuffle(MECHS).forEach((m, i) => {
+    STEPS.push({tag:`Station A · Mécanisme ${i+1}/5`, draw:t => MECH[m.k](t), title:"Identifie le système", prompt:"Observe l'animation. Quel est le nom de ce système ?", opts:SYS_NAMES, a:SYS_NAMES.indexOf(m.sys), why:m.why, card:m.type==="Transmission" ? "transmission" : "transformation"});
+    STEPS.push({tag:`Station A · Mécanisme ${i+1}/5`, draw:t => MECH[m.k](t), title:"Transmission ou transformation ?", prompt:`Le système « ${m.sys} » est un système de…`, opts:["Transmission du mouvement (le type de mouvement reste le même)","Transformation du mouvement (le type de mouvement change)"], a:m.type==="Transmission" ? 0 : 1, why:m.type==="Transmission" ? "Rotation en entrée, rotation en sortie : c'est une transmission." : "Rotation ↔ translation : le type de mouvement change, c'est une transformation.", card:m.type==="Transmission" ? "transmission" : "transformation"});
+  });
+  const UP = pk([2,3,4,6]), DOWN = pk([2,3,4]);
+  const WORD = {2:"2 fois",3:"3 fois",4:"4 fois",6:"6 fois"};
+  STEPS.push({tag:"Station B · Boîte de vitesses", draw:drawGears, gear:{target:UP, text:`Règle l'engrenage pour que la roue menée tourne <b>${WORD[UP]} plus vite</b> que la menante.`}, title:"Augmentation de vitesse", card:"vitesse"});
+  STEPS.push({tag:"Station B · Boîte de vitesses", draw:drawGears, gear:{target:1/DOWN, text:`Maintenant, la roue menée doit tourner <b>${WORD[DOWN]} moins vite</b> que la menante (diminution de vitesse).`}, title:"Diminution de vitesse", card:"vitesse"});
+  STEPS.push({tag:"Station B · Boîte de vitesses", draw:drawGears, title:"Vitesse et force", prompt:"Lorsqu'un système diminue la vitesse de rotation (petite menante, grande menée), la force transmise à la sortie…", opts:["Augmente","Diminue","Reste nulle","Change de sens seulement"], a:0, why:"Ce qu'on perd en vitesse, on le gagne en force. C'est le principe des vitesses basses d'un vélo pour monter une côte.", card:"vitesse"});
+  const V = (h, title, prompt, opts, a, why, card, cl) => ({tag:"Station C · Fiche d'analyse : l'étau d'établi", draw:drawVise, hi:h, title, prompt, opts, a, why, card, clamp:cl});
+  STEPS.push(V(0, "Fonction globale", "Quelle est la fonction globale de l'étau ?", ["Maintenir solidement une pièce pendant qu'on la travaille","Couper une pièce de bois","Mesurer l'épaisseur d'une pièce","Transformer une translation en rotation"], 0, "La fonction globale décrit à quoi sert l'objet, dans son ensemble.", "analyse", 0.1));
+  STEPS.push({tag:"Station C · Fiche d'analyse : l'étau d'établi", draw:drawVise, hi:1, title:"Liaison mors fixe ↔ établi", pairs:[["Directe","Indirecte",1],["Rigide","Élastique",0],["Démontable","Indémontable",0],["Totale","Partielle",0]], prompt:"Le corps de l'étau (1) est fixé à l'établi par des boulons (5). Choisis les 4 caractéristiques de cette liaison.", why:"Indirecte (les boulons sont des organes de liaison), rigide, démontable (on peut dévisser) et totale (aucun mouvement possible).", card:"liaison", clamp:0.25});
+  STEPS.push(V(2, "Fonction de guidage", "Le mors mobile (2) glisse sur la glissière sans tourner. Quel guidage assure-t-elle ?", ["Guidage en rotation","Guidage en translation","Guidage hélicoïdal","Aucun guidage"], 1, "La glissière guide le mors mobile en ligne droite : c'est un guidage en translation.", "liaison", 0.4));
+  STEPS.push(V(3, "Système de transformation", "On tourne la vis (3) et le mors mobile avance. Quel système est utilisé ?", ["Vis et écrou : rotation → translation","Engrenage : rotation → rotation","Bielle et manivelle : translation → rotation","Poulies et courroie"], 0, "Le système vis et écrou transforme la rotation de la vis en translation du mors mobile. Il n'est pas réversible : pousser le mors ne fait pas tourner la vis.", "transformation", 0.6));
+  STEPS.push(V(4, "Contrainte : la manivelle", "Quand tu appuies au bout de la manivelle (4) pour serrer, quelle contrainte subit surtout cette tige ?", ["Traction","Compression","Flexion","Cisaillement"], 2, "La force est appliquée perpendiculairement à la tige, qui tend à se courber : c'est la flexion.", "contraintes", 0.75));
+  STEPS.push(V(3, "Contrainte : la vis", "En serrant fort, quelle contrainte subit la vis (3), qu'on fait tourner à une extrémité alors que l'autre résiste ?", ["Torsion","Flexion","Cisaillement","Aucune"], 0, "Deux forces de rotation en sens opposés aux extrémités tendent à tordre la vis : c'est la torsion.", "contraintes", 0.9));
+  STEPS.push(V(1, "Choix du matériau", "Quel matériau convient le mieux au corps de l'étau (1) ?", ["Fonte ou acier (alliage ferreux) : dur et rigide","Aluminium pur : léger et malléable","Thermoplastique : facile à mouler","Bois tendre : bon isolant"], 0, "Le corps doit résister aux efforts de serrage et aux chocs sans se déformer : on choisit un alliage ferreux, protégé de la corrosion par la peinture.", "contraintes", 1));
+
+  // ---------- interface ----------
+  const panel = $("atPanel");
+  function render(){
+    const s = STEPS[si]; answered = false; hi = s.hi || 0;
+    $("atTag").textContent = `${s.tag} · étape ${si+1}/${STEPS.length}`;
+    let html = `<div class="step">${s.tag}</div><h3>${s.title}</h3>`;
+    if (s.gear){
+      const opts = [10,20,30,40,60];
+      html += `<p>${s.gear.text}</p><p><b>Roue menante</b></p><div class="chips" id="gA">${opts.map(n=>`<button type="button" class="chip ${n===gearA?"on":""}" data-n="${n}">${n} dents</button>`).join("")}</div>
+        <p><b>Roue menée</b></p><div class="chips" id="gB">${opts.map(n=>`<button type="button" class="chip ${n===gearB?"on":""}" data-n="${n}">${n} dents</button>`).join("")}</div>
+        <div class="ratio" id="gR"></div><div id="fb"></div><button type="button" class="btn" id="go">Valider</button>`;
+    } else if (s.pairs){
+      html += `<p>${s.prompt}</p>${s.pairs.map((p,i)=>`<div class="pair" data-i="${i}"><button type="button" class="chip" data-v="0">${p[0]}</button><button type="button" class="chip" data-v="1">${p[1]}</button></div>`).join("")}<div id="fb"></div><button type="button" class="btn" id="go">Valider</button>`;
+    } else {
+      html += `<p>${s.prompt}</p><div class="chips" id="ch">${shuffle(s.opts.map((o,i)=>i)).map(i=>`<button type="button" class="chip" data-i="${i}">${s.opts[i]}</button>`).join("")}</div><div id="fb"></div>`;
+    }
+    panel.innerHTML = html;
+    if (s.gear){
+      const upd = () => { const r = gearA/gearB; $("gR").textContent = `Rapport = ${gearA} ÷ ${gearB} = ${Number.isInteger(r) ? r : r.toFixed(2).replace(".",",")}`; };
+      ["gA","gB"].forEach(id => $(id).querySelectorAll(".chip").forEach(b => b.addEventListener("click", () => { if (answered) return; AudioSys.sfx("click"); if (id==="gA") gearA = +b.dataset.n; else gearB = +b.dataset.n; $(id).querySelectorAll(".chip").forEach(c => c.classList.toggle("on", c===b)); upd(); })));
+      upd();
+      $("go").addEventListener("click", () => {
+        if (answered){ next(); return; }
+        const ok = Math.abs(gearA/gearB - s.gear.target) < 1e-9;
+        const tStr = s.gear.target >= 1 ? String(s.gear.target) : `1/${Math.round(1/s.gear.target)}`;
+        const ex = [10,20,30,40,60].flatMap(a => [10,20,30,40,60].filter(b => Math.abs(a/b - s.gear.target) < 1e-9).map(b => `${a} → ${b}`)).join(", ");
+        grade(ok, ok ? `Rapport ${gearA} ÷ ${gearB} = ${tStr}. ${s.gear.target > 1 ? "Menante plus grande que la menée : augmentation de vitesse." : "Menante plus petite que la menée : diminution de vitesse."}` : `Pas encore : le rapport (dents menante ÷ dents menée) doit valoir ${tStr}. Exemples possibles : ${ex}.`, s.card);
+      });
+    } else if (s.pairs){
+      const pick = {};
+      panel.querySelectorAll(".pair").forEach(row => row.querySelectorAll(".chip").forEach(b => b.addEventListener("click", () => { if (answered) return; AudioSys.sfx("click"); pick[row.dataset.i] = +b.dataset.v; row.querySelectorAll(".chip").forEach(c => c.classList.toggle("on", c===b)); })));
+      $("go").addEventListener("click", () => {
+        if (answered){ next(); return; }
+        if (Object.keys(pick).length < 4){ $("fb").innerHTML = `<div class="feedback bad">Choisis une option dans chacune des 4 lignes.</div>`; return; }
+        let all = true;
+        panel.querySelectorAll(".pair").forEach(row => { const i = +row.dataset.i, good = s.pairs[i][2]; row.querySelectorAll(".chip").forEach(c => { c.classList.remove("on"); if (+c.dataset.v === good) c.classList.add("right"); else if (+c.dataset.v === pick[i]) c.classList.add("wrong"); }); if (pick[i] !== good) all = false; });
+        grade(all, s.why, s.card);
+      });
+    } else {
+      panel.querySelectorAll("#ch .chip").forEach(b => b.addEventListener("click", () => {
+        if (answered) return;
+        const i = +b.dataset.i, ok = i === s.a;
+        panel.querySelectorAll("#ch .chip").forEach(c => { if (+c.dataset.i === s.a) c.classList.add("right"); else if (c === b) c.classList.add("wrong"); });
+        grade(ok, s.why, s.card);
+      }));
+    }
+  }
+  function grade(ok, why, card){
+    answered = true; total++; if (ok){ first++; unlockCard(card); AudioSys.sfx("good"); } else AudioSys.sfx("bad");
+    const s = STEPS[si]; if (s.clamp != null) clamp01 = s.clamp;
+    $("fb").innerHTML = `<div class="feedback ${ok?"":"bad"}"><b>${ok?"Exact !":"À retenir :"}</b> ${why}</div>`;
+    let b = $("go");
+    if (!b){ b = document.createElement("button"); b.type = "button"; b.className = "btn"; b.id = "go"; panel.appendChild(b); b.addEventListener("click", next); }
+    b.textContent = si === STEPS.length-1 ? "Terminer l'analyse ▸" : "Étape suivante ▸";
+    b.focus({preventScroll:true});
+    setHud("Atelier d'analyse", 0, 0, first*50);
+  }
+  function next(){
+    si++;
+    if (si >= STEPS.length){ done = true; unlockCard("analyse"); const r = first/total; root.hidden = true; finishWorld(WID, r >= 0.9 ? 3 : r >= 0.65 ? 2 : 1, `${first}/${total} réussies du premier coup. Tu as identifié 5 mécanismes, réglé une boîte de vitesses et complété la fiche d'analyse de l'étau.`); return; }
+    render();
+  }
+  function fit(){ const r = ac.getBoundingClientRect(), d = devicePixelRatio || 1; ac.width = Math.max(1, r.width*d); ac.height = Math.max(1, r.height*d); }
+
+  return {
+    world:WID,
+    enter(){ hud(true); setHud("Atelier d'analyse", 0, 0, 0); $("hudHearts").textContent = ""; root.hidden = false; AudioSys.play("tech"); fit(); render(); addEventListener("resize", fit); },
+    update(dt){},
+    draw(){
+      g.fillStyle = "#16324f"; g.fillRect(0,0,W,H);
+      if (done || root.hidden) return;
+      if (ac.clientWidth*(devicePixelRatio||1) !== ac.width) fit();
+      const s = Math.min(ac.width/LW, ac.height/LH);
+      x.setTransform(1,0,0,1,0,0); x.clearRect(0,0,ac.width,ac.height);
+      x.setTransform(s,0,0,s,(ac.width-LW*s)/2,(ac.height-LH*s)/2 + 10*s);
+      STEPS[si].draw(T);
+    }
+  };
+}
+// ================= DÉMARRAGE =================
+$("btnCodex").addEventListener("click", () => openCodex());
+const sb = $("btnSound");
+const syncSound = () => sb.textContent = "Son : " + (SAVE.sound ? "activé" : "coupé");
+sb.addEventListener("click", () => { AudioSys.unlock(); AudioSys.setOn(!SAVE.sound); syncSound(); if (SAVE.sound && scene === MenuScene) AudioSys.play("menu"); });
+syncSound();
+go(MenuScene);
+requestAnimationFrame(loop);
+</script>
+
+</body>
+</html>
