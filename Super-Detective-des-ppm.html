@@ -6,6 +6,7 @@
 <title>Super Détective des ppm</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
+<script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;600;700&family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&display=swap">
 <style>
 /* Layout: one 16:9 "console" stage centred on a dark cabinet; DOM overlays sit on the canvas; touch pad below on small screens. Single dark arcade look by choice. */
@@ -153,6 +154,32 @@ button:focus-visible{outline:3px solid var(--coin);outline-offset:2px}
 }
 @media (max-width:520px){ .worlds{grid-template-columns:repeat(2,minmax(0,1fr))} .portal canvas{display:none} }
 @media (prefers-reduced-motion:reduce){ .portal{transition:none} }
+
+/* Course des ppm */
+.rui{flex-direction:column;gap:12px;text-align:center;background:radial-gradient(ellipse at 50% 30%,#3a1f2a,#14121fee 70%);overflow:auto}
+.rui h2{font-family:var(--f-display);font-size:clamp(22px,4.4vw,44px);margin:0;text-shadow:3px 3px 0 #000}
+.rui h2 em{font-style:normal;color:#ff5d6c}
+.rui p{margin:0;max-width:62ch;line-height:1.45;font-size:clamp(13px,1.6vw,16px)}
+.rmodes{display:flex;gap:10px;flex-wrap:wrap;justify-content:center}
+.rmodes .btn{min-width:min(220px,100%)}
+.rmodes .btn small{display:block;font-family:var(--f-body);font-weight:400;font-size:12px;opacity:.85;margin-top:3px}
+.rhelp{color:var(--dim);font-size:13px!important}
+.rhelp kbd{font-family:var(--f-display);background:var(--panel);border:1px solid var(--line);border-bottom-width:3px;border-radius:3px;padding:0 5px}
+.rcode{font-family:var(--f-display);font-size:clamp(34px,7vw,70px);letter-spacing:.18em;color:var(--coin);text-shadow:3px 3px 0 #000}
+.rcodein{font-family:var(--f-display);font-size:26px;letter-spacing:.2em;text-transform:uppercase;width:7ch;text-align:center;background:#0b0914;color:var(--ink);border:2px solid var(--line);border-radius:6px;padding:6px}
+.rstatus{color:var(--dim);font-size:14px!important;min-height:1.4em}
+.rres{display:flex;flex-direction:column;gap:8px;width:min(520px,100%)}
+.rres div{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:baseline;gap:4px 14px;background:#0006;border-left:6px solid var(--c);border-radius:0 6px 6px 0;padding:8px 14px;text-align:left}
+.rres b{font-family:var(--f-display);font-size:18px}
+.rres .rt{font-family:var(--f-display);font-size:22px;color:var(--coin)}
+.rres span:last-child:not(.rt){width:100%;font-size:13px;color:var(--dim)}
+.rpads{display:none;justify-content:space-between;gap:12px;user-select:none;-webkit-user-select:none;touch-action:none}
+.rpads .g{display:flex;gap:8px}
+.rpads button{width:62px;height:56px;font-size:20px;background:var(--panel);color:var(--ink);border:2px solid var(--c);border-radius:10px}
+.rpads button.j{width:86px;font-family:var(--f-display);font-size:15px}
+.rpads button.on{filter:brightness(1.5)}
+.rpads:not(.two) .g[data-p="1"]{display:none}
+@media (pointer:coarse){ .rpads:not([hidden]){display:flex} }
 </style>
 <style>:root{padding:env(safe-area-inset-top,0) 0 env(safe-area-inset-bottom,0)}body{margin:0;font-family:system-ui,sans-serif}img{max-width:100%}[hidden]{display:none!important}</style>
 </head>
@@ -189,8 +216,13 @@ button:focus-visible{outline:3px solid var(--coin);outline-offset:2px}
     <div class="ov codex" id="codex" hidden></div>
     <div class="ov atelier" id="atelier" hidden></div>
     <div class="ov banner" id="banner" hidden></div>
+    <div class="ov rui" id="raceUI" hidden></div>
   </div>
 
+  <div class="rpads" id="racePads" hidden>
+    <div class="g" data-p="0" style="--c:#5ee6c8"><button type="button" data-k="l" aria-label="Joueur 1 gauche">◀</button><button type="button" data-k="r" aria-label="Joueur 1 droite">▶</button><button type="button" class="j" data-k="j" aria-label="Joueur 1 sauter">SAUT</button></div>
+    <div class="g" data-p="1" style="--c:#ff7a59"><button type="button" class="j" data-k="j" aria-label="Joueur 2 sauter">SAUT</button><button type="button" data-k="l" aria-label="Joueur 2 gauche">◀</button><button type="button" data-k="r" aria-label="Joueur 2 droite">▶</button></div>
+  </div>
   <div class="pad" id="pad">
     <div class="g"><button type="button" data-k="left" aria-label="Gauche">◀</button><button type="button" data-k="right" aria-label="Droite">▶</button></div>
     <div class="g"><button type="button" data-k="up" aria-label="Haut">▲</button><button type="button" data-k="down" aria-label="Bas">▼</button><button type="button" class="act" data-k="fire" aria-label="Lancer" style="width:64px;background:#5ee6a0;border-color:#2aa86d">TIR</button><button type="button" class="act" data-k="jump" aria-label="Saut">SAUT</button></div>
@@ -1089,19 +1121,21 @@ function MarioWorld(wid){
 }
 
 // ================= CARTE =================
-const NODES = [{x:150,y:395},{x:370,y:255},{x:590,y:385},{x:810,y:255}];
-let mapSel = clamp(SAVE.node || 0, 0, 3), mapPos = {x:NODES[mapSel].x, y:NODES[mapSel].y}, mapMoving = false;
+const NODES = [{x:120,y:360},{x:300,y:235},{x:480,y:350},{x:660,y:228},{x:845,y:342}];
+let mapSel = clamp(SAVE.node || 0, 0, 4), mapPos = {x:NODES[mapSel].x, y:NODES[mapSel].y}, mapMoving = false;
 function mapPanel(){
+  if (mapSel === 4){ const best = SAVE.raceBest; $("mapNo").textContent = "Multijoueur" + (best ? ` · record solo ${fmtT(best)}` : ""); $("mapName").textContent = "Course des ppm"; $("mapName").style.color = "#ff5d6c"; $("mapDesc").textContent = "Le plus rapide gagne ! Frappe les bons blocs-réponses pour un turbo. À 2 sur le même appareil, en ligne ou contre la montre."; return; }
   const w = WORLDS[mapSel], st = SAVE.stars[w.id] || 0;
   $("mapNo").textContent = `${w.no} · ${"★".repeat(st)}${"☆".repeat(3-st)}`;
   $("mapName").textContent = w.name; $("mapName").style.color = w.col;
   $("mapDesc").textContent = MAPINFO[w.id];
 }
-function mapGo(i){ i = clamp(i, 0, 3); if (i === mapSel) return; mapSel = i; SAVE.node = i; persist(); mapMoving = true; AudioSys.sfx("click"); mapPanel(); }
+function mapGo(i){ i = clamp(i, 0, 4); if (i === mapSel) return; mapSel = i; SAVE.node = i; persist(); mapMoving = true; AudioSys.sfx("click"); mapPanel(); }
 function drawNodeIcon(i, x, y){
   if (i === 0){ g.fillStyle = "#cfe7f5"; g.beginPath(); g.moveTo(x-6,y-34); g.lineTo(x+6,y-34); g.lineTo(x+6,y-20); g.lineTo(x+20,y); g.lineTo(x-20,y); g.lineTo(x-6,y-20); g.fill(); g.fillStyle = "#5ee6c8"; g.beginPath(); g.moveTo(x-12,y-10); g.lineTo(x+12,y-10); g.lineTo(x+18,y-2); g.lineTo(x-18,y-2); g.fill(); }
   else if (i === 1){ px(x-22, y-26, 44, 12, "#9aa4ad"); px(x-6, y-14, 12, 14, "#9aa4ad"); g.save(); g.translate(x, y-32); g.rotate(T*2); g.fillStyle = "#d0605a"; g.fillRect(-3,-12,6,24); g.fillRect(-12,-3,24,6); g.restore(); }
   else if (i === 2){ g.strokeStyle = "#2f6f9a"; g.lineWidth = 8; g.beginPath(); g.moveTo(x-22, y-30); g.quadraticCurveTo(x, y-10, x+22, y-24); g.stroke(); px(x-2, y-40, 4, 30, "#e8eef2"); g.fillStyle = "#b48cff"; g.beginPath(); g.moveTo(x+2,y-40); g.lineTo(x+18,y-34); g.lineTo(x+2,y-28); g.fill(); }
+  else if (i === 4){ px(x-2, y-44, 4, 44, "#e8eef2"); for (let r=0;r<3;r++) for (let c=0;c<4;c++) px(x+2+c*6, y-44+r*6, 6, 6, (r+c)%2 ? "#1a1424" : "#ffffff"); }
   else { g.fillStyle = "#1d4a58"; g.beginPath(); g.ellipse(x, y-12, 22, 8, 0, 0, 7); g.fill(); px(x-22, y-12, 44, 12, "#1d4a58"); g.fillStyle = "#2f7f94"; g.beginPath(); g.ellipse(x, y-12, 18, 5, 0, 0, 7); g.fill(); }
 }
 const MenuScene = {
@@ -1111,22 +1145,22 @@ const MenuScene = {
     if (mapMoving){ const dx = tg.x - mapPos.x, dy = tg.y - mapPos.y, d = Math.hypot(dx,dy); if (d < 6){ mapPos = {x:tg.x, y:tg.y}; mapMoving = false; } else { mapPos.x += dx/d*360*dt; mapPos.y += dy/d*360*dt; } return; }
     if (consume("left") || consume("up")) mapGo(mapSel - 1);
     else if (consume("right") || consume("down")) mapGo(mapSel + 1);
-    else if (consume("jump")) startWorld(WORLDS[mapSel].id);
+    else if (consume("jump")) playNode(mapSel);
   },
-  onClick(x, y){ const i = NODES.findIndex(n => Math.hypot(n.x - x, n.y - 20 - y) < 50); if (i < 0) return; if (i === mapSel && !mapMoving) startWorld(WORLDS[i].id); else mapGo(i); },
+  onClick(x, y){ const i = NODES.findIndex(n => Math.hypot(n.x - x, n.y - 20 - y) < 50); if (i < 0) return; if (i === mapSel && !mapMoving) playNode(i); else mapGo(i); },
   draw(){
     const gr = g.createLinearGradient(0,0,0,H); gr.addColorStop(0,"#2a9ab0"); gr.addColorStop(1,"#14607a"); g.fillStyle = gr; g.fillRect(0,0,W,H);
     g.strokeStyle = "#ffffff30"; g.lineWidth = 2; for (let i=0;i<26;i++){ const wx = (i*137 + T*12) % (W+60) - 30, wy = (i*71) % H; g.beginPath(); g.moveTo(wx, wy); g.quadraticCurveTo(wx+10, wy-5, wx+20, wy); g.stroke(); }
     const isl = (cx, cy, rx, ry) => { g.fillStyle = "#f0d9a0"; g.beginPath(); g.ellipse(cx, cy, rx+14, ry+12, 0, 0, 7); g.fill(); g.fillStyle = "#5fae46"; g.beginPath(); g.ellipse(cx, cy, rx, ry, 0, 0, 7); g.fill(); };
-    isl(260, 330, 230, 130); isl(700, 320, 240, 130);
-    for (let i=0;i<3;i++){ const a = NODES[i], b = NODES[i+1]; g.strokeStyle = "#fff6dc"; g.lineWidth = 6; g.setLineDash([2, 14]); g.lineCap = "round"; g.beginPath(); g.moveTo(a.x, a.y); g.quadraticCurveTo((a.x+b.x)/2, Math.min(a.y,b.y) - 40, b.x, b.y); g.stroke(); g.setLineDash([]); g.lineCap = "butt"; }
-    for (let i=0;i<4;i++){ const n = NODES[i], w = WORLDS[i], st = SAVE.stars[w.id] || 0;
+    isl(240, 300, 210, 125); isl(600, 295, 200, 125); isl(850, 310, 110, 90);
+    for (let i=0;i<4;i++){ const a = NODES[i], b = NODES[i+1]; g.strokeStyle = "#fff6dc"; g.lineWidth = 6; g.setLineDash([2, 14]); g.lineCap = "round"; g.beginPath(); g.moveTo(a.x, a.y); g.quadraticCurveTo((a.x+b.x)/2, Math.min(a.y,b.y) - 40, b.x, b.y); g.stroke(); g.setLineDash([]); g.lineCap = "butt"; }
+    for (let i=0;i<5;i++){ const n = NODES[i], w = WORLDS[i] || {id:"race", col:"#ff5d6c"}, st = SAVE.stars[w.id] || 0;
       g.fillStyle = "#00000040"; g.beginPath(); g.ellipse(n.x, n.y+6, 34, 12, 0, 0, 7); g.fill();
       g.fillStyle = w.col; g.beginPath(); g.ellipse(n.x, n.y, 32, 12, 0, 0, 7); g.fill();
       if (i === mapSel){ g.strokeStyle = "#fff"; g.lineWidth = 3; g.beginPath(); g.ellipse(n.x, n.y, 38 + Math.sin(T*5)*3, 15, 0, 0, 7); g.stroke(); }
       drawNodeIcon(i, n.x + 38, n.y - 2);
-      g.fillStyle = "#1a1424"; font(15); g.textAlign = "center"; g.fillText(String(i+1), n.x, n.y + 5);
-      g.fillStyle = "#ffc93c"; font(16); g.fillText("★".repeat(st) + "☆".repeat(3-st), n.x, n.y + 34); }
+      g.fillStyle = "#1a1424"; font(15); g.textAlign = "center"; g.fillText(i === 4 ? "VS" : String(i+1), n.x, n.y + 5);
+      g.fillStyle = "#ffc93c"; font(16); g.fillText(i === 4 ? "COURSE" : "★".repeat(st) + "☆".repeat(3-st), n.x, n.y + 34); }
     drawHero(mapPos.x, mapPos.y - 50 - Math.abs(Math.sin(T*(mapMoving?10:3)))*(mapMoving?6:3), NODES[mapSel].x >= mapPos.x ? 1 : -1, T, {run:mapMoving, coat:"#ffffff"});
     g.fillStyle = "#1a1424"; g.globalAlpha = 0.3; font(30); g.textAlign = "center"; g.fillText("Choisis ta mission", W/2+3, 55); g.globalAlpha = 1; g.fillStyle = "#fff"; g.fillText("Choisis ta mission", W/2, 52);
     g.fillStyle = "#ffffffcc"; font(14); g.fillText("1 ppm = 1 mg/L   ·   1 g/L = 1000 ppm   ·   1 % = 10 000 ppm", W/2, 82);
@@ -1134,7 +1168,328 @@ const MenuScene = {
 };
 $("mapPrev").addEventListener("click", () => { AudioSys.unlock(); mapGo(mapSel - 1); });
 $("mapNext").addEventListener("click", () => { AudioSys.unlock(); mapGo(mapSel + 1); });
-$("mapPlay").addEventListener("click", () => { AudioSys.unlock(); startWorld(WORLDS[mapSel].id); });
+$("mapPlay").addEventListener("click", () => { AudioSys.unlock(); playNode(mapSel); });
+function playNode(i){ if (i === 4) openRace(); else startWorld(WORLDS[i].id); }
+// ================= COURSE DES PPM (multijoueur : le plus rapide gagne) =================
+const fmtT = s => { const m = Math.floor(s/60), r = s - m*60; return `${m}:${r < 10 ? "0" : ""}${r.toFixed(1).replace(".", ",")}`; };
+function mulberry32(a){ return function(){ a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+function withSeed(seed, fn){ const r = Math.random; Math.random = mulberry32(seed); try { return fn(); } finally { Math.random = r; } }
+const SEG_FINISH = ["                ","                ","                ","                ","                ","                ","                ","                ","################","################"];
+const RACE_COL = ["#5ee6c8", "#ff7a59"];
+
+function buildRace(seed){
+  return withSeed(seed, () => {
+    const commons = shuffle(SEG_COMMON).slice(0, 6).map(r => r.map(row => row.replace(/\?/g, "B")));
+    const list = [SEG_START];
+    commons.forEach((c, i) => { list.push(c); if (i < 5) list.push(SEG_ANSWER); });
+    list.push(SEG_FINISH);
+    const map = []; for (let r=0;r<14;r++) map.push([]);
+    const spawns = [], coins = [], groups = []; let finCol = 0;
+    for (const rowsIn of list){
+      const w = Math.max(...rowsIn.map(r => r.length)), c0 = map[0].length; if (rowsIn === SEG_FINISH) finCol = c0 + 9;
+      const rows = Array(4).fill(" ".repeat(w)).concat(rowsIn.map(r => r.padEnd(w, " "))); let grp = null;
+      rows.forEach((row, r) => { for (let i=0;i<w;i++){ let ch = row[i];
+        if ("ef".includes(ch)){ spawns.push({type:ch, c:c0+i, r}); ch = " "; }
+        else if (ch === "o"){ coins.push({x:(c0+i)*40+20, y:r*40+20}); ch = " "; }
+        else if (ch === "A"){ if (!grp){ grp = {runs:[], r}; groups.push(grp); } const last = grp.runs[grp.runs.length-1]; if (last && last.c1 === c0+i-1) last.c1 = c0+i; else grp.runs.push({c0:c0+i, c1:c0+i}); }
+        map[r].push(ch); } });
+    }
+    groups.forEach((G, i) => { const k = i % 3; G.q = k === 0 ? genQuick("lab") : k === 1 ? genQuick("turbo") : normQuick(pk([5,10,20])); });
+    return {map, COLS:map[0].length, spawns, coins, groups, flagX:finCol*40};
+  });
+}
+function newRunner(R, idx){
+  return {idx, map:R.map.map(r => r.slice()), done:R.groups.map(() => -1), coins:R.coins.map(c => ({...c, on:true})),
+    en:R.spawns.map((s,i) => ({type:s.type, x:s.c*40+4, y:(s.r+1)*40-30, x0:s.c*40+4, y0:s.r*40+6, w:32, h:30, vx:i%2 ? 60 : -60, alive:true, v:i, ph:i*1.7, t:0})),
+    x:2*40 + idx*14, y:9*40, w:24, h:46, vx:0, vy:0, on:false, face:1, stun:0, boost:0, safeX:80, prevB:0, fin:false, time:0, right:0, wrong:0, nCoins:0, fb:null, cam:0, inp:{l:false, r:false, j:false, jp:false}};
+}
+
+const RACE = {active:false};
+function openRace(){
+  $("menu").hidden = true;
+  RACE.active = true; RACE.mode = null; raceUI("modes");
+}
+function raceUI(which, extra){
+  const el = $("raceUI"); el.hidden = false;
+  if (which === "modes"){
+    el.innerHTML = `<h2>Course des <em>ppm</em></h2><p>Même parcours pour tout le monde. Frappe par en dessous le bloc-réponse qui porte la bonne lettre : <b>turbo</b> si c'est juste, <b>fausse manip</b> (tu figes 1,5 s) si c'est faux. Le premier au drapeau gagne !</p>
+      <div class="rmodes"><button class="btn" id="rLocal" type="button">2 joueurs<small>Écran partagé, même appareil</small></button><button class="btn gold" id="rOnline" type="button">En ligne<small>Deux appareils, un code</small></button><button class="btn" id="rSolo" type="button">Contre la montre<small>Bats ton record</small></button></div>
+      <p class="rhelp">Joueur 1 : <kbd>A</kbd> <kbd>D</kbd> et <kbd>W</kbd> pour sauter · Joueur 2 : <kbd>←</kbd> <kbd>→</kbd> et <kbd>↑</kbd> · Sur iPad : boutons sous l'écran</p>
+      <button class="btn" id="rBack" type="button">Retour à la carte</button>`;
+    $("rLocal").onclick = () => startRace("local", (Math.random()*1e9)|0);
+    $("rSolo").onclick = () => startRace("solo", (Math.random()*1e9)|0);
+    $("rOnline").onclick = () => raceUI("online");
+    $("rBack").onclick = () => quitToMenu();
+  } else if (which === "online"){
+    el.innerHTML = `<h2>Course en ligne</h2><p>Les deux appareils doivent être connectés à Internet. L'un crée la course et donne le code à l'autre.</p>
+      <div class="rmodes" id="rOnChoice"><button class="btn gold" id="rHost" type="button">Créer une course</button><button class="btn" id="rJoinShow" type="button">Rejoindre une course</button></div>
+      <div id="rHostBox" hidden><p>Code à donner :</p><div class="rcode" id="rCode">····</div></div>
+      <div id="rJoinBox" hidden><input class="rcodein" id="rCodeIn" maxlength="4" autocomplete="off" placeholder="CODE" aria-label="Code de la course"> <button class="btn gold" id="rJoin" type="button">Rejoindre</button></div>
+      <p class="rstatus" id="rStatus" aria-live="polite">${typeof Peer === "undefined" && location.hash !== "#bctest" ? "Le mode en ligne demande une connexion Internet." : ""}</p>
+      <button class="btn" id="rBack2" type="button">Annuler</button>`;
+    $("rBack2").onclick = () => { raceNetClose(); raceUI("modes"); };
+    $("rHost").onclick = raceHost;
+    $("rJoinShow").onclick = () => { $("rOnChoice").hidden = true; $("rJoinBox").hidden = false; $("rCodeIn").focus(); };
+    $("rJoin").onclick = raceJoin;
+    $("rCodeIn").addEventListener("keydown", e => { if (e.key === "Enter") raceJoin(); });
+  } else if (which === "results"){
+    el.innerHTML = extra;
+  }
+}
+function rStatus(t){ const s = $("rStatus"); if (s) s.textContent = t; }
+
+function startRace(mode, seed){
+  RACE.mode = mode; RACE.seed = seed; RACE.R = buildRace(seed);
+  RACE.n = mode === "local" ? 2 : 1;
+  RACE.p = Array.from({length:RACE.n}, (_, i) => newRunner(RACE.R, i));
+  RACE.ghost = mode === "online" ? {x:80, y:360, face:1, fin:false, time:0, right:0, wrong:0, on:true} : null;
+  RACE.count = 3.5; RACE.clock = 0; RACE.over = false; RACE.endT = 0; RACE.sendT = 0;
+  $("raceUI").hidden = true; $("pad").hidden = true;
+  $("racePads").hidden = false; $("racePads").classList.toggle("two", RACE.n === 2);
+  hud(false); AudioSys.play("elec");
+  go(RaceScene);
+}
+
+// ---------- contrôles propres à la course ----------
+const RK = {KeyA:[0,"l"], KeyD:[0,"r"], KeyW:[0,"j"], Space:[0,"j"], ArrowLeft:[1,"l"], ArrowRight:[1,"r"], ArrowUp:[1,"j"]};
+function rSet(pi, k, down){
+  if (!RACE.p) return; if (RACE.n === 1) pi = 0; const I = RACE.p[pi] && RACE.p[pi].inp; if (!I) return;
+  if (k === "j" && down && !I.j) I.jp = true; I[k] = down;
+}
+addEventListener("keydown", e => { if (scene !== RaceScene) return; const m = RK[e.code]; if (m){ e.preventDefault(); if (!e.repeat) rSet(m[0], m[1], true); } });
+addEventListener("keyup", e => { if (scene !== RaceScene) return; const m = RK[e.code]; if (m) rSet(m[0], m[1], false); });
+document.querySelectorAll("#racePads button").forEach(b => {
+  const pi = +b.parentElement.dataset.p, k = b.dataset.k;
+  const on = e => { e.preventDefault(); AudioSys.unlock(); b.classList.add("on"); rSet(pi, k, true); };
+  const off = e => { e.preventDefault(); b.classList.remove("on"); rSet(pi, k, false); };
+  b.addEventListener("pointerdown", on); ["pointerup","pointerleave","pointercancel"].forEach(ev => b.addEventListener(ev, off));
+});
+
+// ---------- physique d'un coureur ----------
+const RSOLID = "#B=PAGRX";
+function rTile(P, c, r){ return (c < 0 || c >= RACE.R.COLS) ? "#" : (r < 0 || r >= 14) ? " " : P.map[r][c]; }
+function rSolid(ch){ return RSOLID.includes(ch); }
+function rHit(P, c, r){
+  const R = RACE.R, gi = R.groups.findIndex(G => G.r === r && G.runs.some(u => c >= u.c0 && c <= u.c1));
+  if (gi < 0 || P.done[gi] >= 0){ AudioSys.sfx("bump"); return; }
+  const G = R.groups[gi], k = G.runs.findIndex(u => c >= u.c0 && c <= u.c1); P.done[gi] = k;
+  G.runs.forEach((u, i) => { for (let cc=u.c0; cc<=u.c1; cc++) P.map[r][cc] = i === G.q.a ? "G" : (i === k ? "R" : "X"); });
+  if (k === G.q.a){ P.right++; P.boost = 3.2; AudioSys.sfx("good"); unlockCard(G.q.c); P.fb = {ok:true, t:3, h:"Turbo !", e:G.q.e}; }
+  else { P.wrong++; P.stun = 1.5; P.vx = 0; AudioSys.sfx("bad"); P.fb = {ok:false, t:4.5, h:`Fausse manip ! Réponse : ${"ABC"[G.q.a]} = ${G.q.o[G.q.a]}`, e:G.q.e}; }
+}
+function rStep(P, dt){
+  const I = P.inp;
+  if (P.fb){ P.fb.t -= dt; if (P.fb.t <= 0) P.fb = null; }
+  if (P.fin){ P.vx *= 0.9; I.jp = false; return; }
+  P.time += dt; P.stun = Math.max(0, P.stun - dt); P.boost = Math.max(0, P.boost - dt);
+  const MAXV = P.boost > 0 ? 410 : 270, acc = P.on ? 2100 : 1300;
+  if (P.stun > 0){ P.vx *= Math.pow(0.001, dt); }
+  else if (I.l){ P.vx = Math.max(-MAXV, P.vx - acc*dt); P.face = -1; }
+  else if (I.r){ P.vx = Math.min(MAXV, P.vx + acc*dt); P.face = 1; }
+  else { P.vx *= P.on ? Math.pow(0.0005, dt) : Math.pow(0.2, dt); }
+  if (P.boost <= 0 && Math.abs(P.vx) > MAXV) P.vx = Math.sign(P.vx)*MAXV;
+  if (I.jp && P.on && P.stun <= 0){ P.vy = -760; AudioSys.sfx("jump"); }
+  I.jp = false;
+  if (!I.j && P.vy < -300) P.vy = -300;
+  P.vy = Math.min(900, P.vy + 1900*dt);
+  // X
+  P.x += P.vx*dt; P.x = Math.max(0, P.x);
+  { const top = Math.floor(P.y/40), bot = Math.floor((P.y+P.h-1)/40);
+    if (P.vx > 0){ const c = Math.floor((P.x+P.w)/40); for (let r=top;r<=bot;r++) if (rSolid(rTile(P,c,r))){ P.x = c*40 - P.w - 0.01; P.vx = 0; } }
+    else if (P.vx < 0){ const c = Math.floor(P.x/40); for (let r=top;r<=bot;r++) if (rSolid(rTile(P,c,r))){ P.x = (c+1)*40 + 0.01; P.vx = 0; } } }
+  // Y
+  P.prevB = P.y + P.h; P.y += P.vy*dt; P.on = false;
+  { const l = Math.floor(P.x/40), rr = Math.floor((P.x+P.w-1)/40);
+    if (P.vy >= 0){ const r = Math.floor((P.y+P.h)/40); for (let c=l;c<=rr;c++){ const ch = rTile(P,c,r); if (rSolid(ch) || (ch === "-" && P.prevB <= r*40 + 1)){ P.y = r*40 - P.h; P.vy = 0; P.on = true; if (rTile(P, Math.floor((P.x+P.w/2)/40), r) === "#") P.safeX = P.x; } } }
+    else { const r = Math.floor(P.y/40); let hc = -1, best = 1e9; for (let c=l;c<=rr;c++) if (rSolid(rTile(P,c,r))){ const d = Math.abs(c*40+20 - (P.x+P.w/2)); if (d < best){ best = d; hc = c; } } if (hc >= 0){ P.y = (r+1)*40; P.vy = 0; if (rTile(P,hc,r) === "A") rHit(P, hc, r); else AudioSys.sfx("bump"); } } }
+  if (P.y > H + 60){ P.x = Math.max(0, P.safeX - 40); P.y = 5*40; P.vy = 0; P.vx = 0; P.stun = 1.2; AudioSys.sfx("hit"); P.fb = {ok:false, t:2, h:"Chute ! −1,2 s", e:""}; }
+  // ennemis : les toucher fait perdre du temps
+  for (const e of P.en){
+    if (!e.alive || Math.abs(e.x - P.x) > 1100) continue;
+    if (e.type === "f"){ e.t += dt; e.x = e.x0 + Math.sin(e.t*0.9 + e.v)*90; e.vx = Math.cos(e.t*0.9 + e.v); e.y = e.y0 + Math.sin(e.t*2.4)*26; }
+    else { e.x += e.vx*dt; const ahead = e.vx > 0 ? e.x + e.w + 2 : e.x - 2, c = Math.floor(ahead/40), r = Math.floor((e.y+e.h-4)/40); if (rSolid(rTile(P,c,r)) || !rSolid(rTile(P,c,r+1))) e.vx *= -1; }
+    if (P.x < e.x+e.w && P.x+P.w > e.x && P.y < e.y+e.h && P.y+P.h > e.y){
+      if (P.vy > 40 && P.y + P.h - e.y < 22){ e.alive = false; P.vy = -480; AudioSys.sfx("stomp"); }
+      else if (P.stun <= 0){ P.stun = 0.9; P.vx = (P.x < e.x ? -1 : 1) * 260; P.vy = -300; AudioSys.sfx("hit"); }
+    }
+  }
+  for (const co of P.coins) if (co.on && Math.abs(co.x - (P.x+P.w/2)) < 22 && Math.abs(co.y - (P.y+P.h/2)) < 30){ co.on = false; P.nCoins++; AudioSys.sfx("coin"); }
+  if (P.x > RACE.R.flagX){ P.fin = true; AudioSys.sfx("win"); if (RACE.mode === "online") rSend({t:"fin", tm:P.time, r:P.right, w:P.wrong}); }
+}
+
+// ---------- dessin d'une vue ----------
+function rBackdrop(cam, vw){
+  g.fillStyle = "#1d3c5c"; g.fillRect(0, 0, vw, 560);
+  const o1 = -(cam*0.2) % 48; g.fillStyle = "#24476b"; for (let x=o1;x<vw;x+=48) g.fillRect(x,0,2,560); for (let y=0;y<560;y+=48) g.fillRect(0,y,vw,2);
+  const o2 = -(cam*0.45);
+  for (let i=0;i<120;i++){ const sx = o2 + i*260; if (sx < -260 || sx > vw) continue; px(sx, 150, 200, 8, "#5b3b22");
+    const cols = ["#ff5d6c","#5ee6a0","#ffc93c","#c08bff"]; for (let k=0;k<4;k++){ const bx = sx+16+k*46; px(bx+6,100,16,50,"#cfe7f5"); px(bx+9,120,10,30,cols[(i+k)%4]); } }
+}
+function rDrawWorld(P, others, vw){
+  const R = RACE.R, cam = P.cam, TH = THEMES.lab, GR = TH.ground;
+  rBackdrop(cam, vw);
+  g.save(); g.translate(-cam, 0);
+  const c0 = Math.max(0, Math.floor(cam/40)), c1 = Math.min(R.COLS-1, c0 + Math.ceil(vw/40) + 1);
+  for (let c=c0;c<=c1;c++){
+    if (P.map[12][c] === " " && P.map[13][c] === " ") px(c*40, 500, 40, 60, TH.gap);
+    for (let r=0;r<14;r++){ const ch = P.map[r][c]; if (ch === " ") continue; const x = c*40, y = r*40;
+      if (ch === "#"){ px(x,y,40,40,GR[1]); if (!rSolid(rTile(P,c,r-1))){ px(x,y,40,8,GR[0]); px(x,y+8,40,3,GR[2]); } }
+      else if (ch === "B"){ px(x,y,40,40,TH.brick[0]); px(x+2,y+2,36,36,TH.brick[1]); px(x,y+19,40,2,TH.brick[0]); px(x+19,y,2,19,TH.brick[0]); }
+      else if (ch === "=" || ch === "P"){ px(x,y,40,40,TH.block[0]); px(x+3,y+3,34,34,TH.block[1]); }
+      else if (ch === "-"){ px(x, y, 40, 10, TH.plank); }
+      else if ("AGRX".includes(ch)){ const col = ch === "G" ? ["#1f7a4d","#5ee6a0"] : ch === "R" ? ["#7a1f2a","#ff5d6c"] : ch === "X" ? ["#2e2640","#4a4060"] : ["#0d4a5a","#5ee6c8"]; px(x,y,40,40,col[0]); px(x, y+2, 40, 36, col[1]); }
+    } }
+  // lettres des blocs-réponses
+  R.groups.forEach((G, gi) => { G.runs.forEach((u, i) => { const ux = u.c0*40, uw = (u.c1-u.c0+1)*40; if (ux + uw < cam - 40 || ux > cam + vw + 40) return;
+    g.fillStyle = P.done[gi] >= 0 && i !== G.q.a ? "#ffffff88" : "#08202a"; font(28); g.textAlign = "center"; g.fillText("ABC"[i], ux + uw/2, G.r*40 + 31); }); });
+  for (const co of P.coins){ if (!co.on || co.x < cam - 20 || co.x > cam + vw + 20) continue; g.fillStyle = "#ffc93c"; g.beginPath(); g.ellipse(co.x, co.y, 9*Math.abs(Math.cos(T*4 + co.x)) + 1, 13, 0, 0, 7); g.fill(); }
+  for (const e of P.en){ if (e.alive && e.x > cam - 60 && e.x < cam + vw + 60) drawFoe(e, e.x, e.y, TH); }
+  // drapeau
+  const fx = R.flagX; px(fx+18, 120, 6, 360, "#e8eef2"); for (let r=0;r<4;r++) for (let c=0;c<6;c++) px(fx+24+c*10, 124+r*10, 10, 10, (r+c)%2 ? "#1a1424" : "#ffffff"); g.fillStyle = "#fff"; font(16); g.textAlign = "center"; g.fillText("ARRIVÉE", fx + 50, 112);
+  // autres coureurs (fantômes)
+  for (const o of others){ g.globalAlpha = 0.45; drawHero(o.x + 12, o.y - 2, o.face, T, {run:!o.fin, coat:RACE_COL[o.idx]}); g.globalAlpha = 1; g.fillStyle = RACE_COL[o.idx]; font(13); g.textAlign = "center"; g.fillText(o.label, o.x + 12, o.y - 10); }
+  if (P.boost > 0){ for (let i=1;i<4;i++){ g.globalAlpha = 0.18*(4-i); drawHero(P.x + 12 - P.face*i*14, P.y - 2, P.face, T, {run:true, coat:RACE_COL[P.idx]}); } g.globalAlpha = 1; }
+  drawHero(P.x + 12, P.y - 2, P.face, T, {run: Math.abs(P.vx) > 20 && P.on, air: !P.on, blink: P.stun > 0, coat:RACE_COL[P.idx]});
+  if (P.stun > 0 && !P.fin){ g.fillStyle = "#ffc93c"; font(18); g.textAlign = "center"; for (let i=0;i<3;i++){ const a = T*6 + i*2.1; g.fillText("✦", P.x + 12 + Math.cos(a)*18, P.y - 8 + Math.sin(a)*6); } }
+  g.restore();
+}
+function rNextGroup(P){ const R = RACE.R; let best = -1; R.groups.forEach((G, gi) => { const x1 = (G.runs[G.runs.length-1].c1 + 1)*40; if (P.done[gi] < 0 && x1 > P.x - 10 && (best < 0 || G.runs[0].c0 < R.groups[best].runs[0].c0)) best = gi; }); return best; }
+function rView(P, others, vx, vy, vw, vh, s, label){
+  const ww = vw/s; // largeur du monde visible
+  P.cam += ((P.x - ww*0.35) - P.cam) * 0.15; P.cam = clamp(P.cam, 0, RACE.R.COLS*40 - ww);
+  g.save(); g.beginPath(); g.rect(vx, vy, vw, vh); g.clip(); g.translate(vx, vy); g.scale(s, s);
+  rDrawWorld(P, others, ww);
+  g.restore();
+  // bandeau question (en coordonnées écran, toujours lisible)
+  g.save(); g.beginPath(); g.rect(vx, vy, vw, vh); g.clip();
+  const gi = rNextGroup(P), bh = 54;
+  g.fillStyle = "#000c"; g.fillRect(vx, vy, vw, bh); g.fillStyle = RACE_COL[P.idx]; g.fillRect(vx, vy + bh - 3, vw, 3);
+  g.textAlign = "left"; g.fillStyle = RACE_COL[P.idx]; font(15); g.fillText(label, vx + 10, vy + 20);
+  g.fillStyle = "#fff"; font(18); g.textAlign = "right"; g.fillText(fmtT(P.time), vx + vw - 10, vy + 22);
+  g.font = `700 13px "Atkinson Hyperlegible", sans-serif`; g.fillStyle = "#ffc93c"; g.fillText(`✓ ${P.right}  ✗ ${P.wrong}`, vx + vw - 10, vy + 42);
+  g.textAlign = "left";
+  if (P.fb){ g.fillStyle = P.fb.ok ? "#5ee6a0" : "#ff5d6c"; g.font = `700 15px "Atkinson Hyperlegible", sans-serif`; g.fillText(P.fb.h, vx + 130, vy + 20); g.fillStyle = "#e8eef2"; g.font = `400 13px "Atkinson Hyperlegible", sans-serif`; const t = P.fb.e.length > 95 ? P.fb.e.slice(0, 93) + "…" : P.fb.e; g.fillText(t, vx + 10, vy + 42); }
+  else if (gi >= 0 && !P.fin){ const G = RACE.R.groups[gi]; g.fillStyle = "#fff"; g.font = `700 16px "Atkinson Hyperlegible", sans-serif`; g.fillText(G.q.q, vx + 130, vy + 20);
+    g.font = `700 14px "Atkinson Hyperlegible", sans-serif`; let xx = vx + 10; G.q.o.forEach((o, i) => { g.fillStyle = "#5ee6c8"; g.fillText("ABC"[i] + " :", xx, vy + 42); g.fillStyle = "#f4efe0"; g.fillText(o, xx + 26, vy + 42); xx += 30 + g.measureText(o).width + 22; }); }
+  else if (P.fin){ g.fillStyle = "#5ee6a0"; g.font = `700 16px "Atkinson Hyperlegible", sans-serif`; g.fillText("Arrivé ! En attente des autres…", vx + 130, vy + 20); }
+  // progression
+  const R = RACE.R, px0 = vx + 20, pw = vw - 40, py = vy + vh - 16;
+  g.fillStyle = "#000a"; g.fillRect(px0 - 6, py - 8, pw + 12, 16); g.fillStyle = "#ffffff33"; g.fillRect(px0, py - 2, pw, 4);
+  const dot = (x, col) => { g.fillStyle = col; g.beginPath(); g.arc(px0 + pw*clamp(x/R.flagX, 0, 1), py, 6, 0, 7); g.fill(); };
+  others.forEach(o => dot(o.x, RACE_COL[o.idx])); dot(P.x, RACE_COL[P.idx]);
+  g.fillStyle = "#fff"; g.fillRect(px0 + pw - 2, py - 8, 4, 16);
+  g.restore();
+}
+
+// ---------- scène ----------
+const RaceScene = {
+  world:"race",
+  enter(){},
+  update(dt){
+    if (RACE.over) return;
+    if (RACE.count > 0){ const before = Math.ceil(RACE.count); RACE.count -= dt; const now = Math.ceil(RACE.count); if (now !== before) AudioSys.sfx(now <= 0 ? "good" : "click"); RACE.p.forEach(P => P.inp.jp = false); return; }
+    RACE.p.forEach(P => rStep(P, dt));
+    if (RACE.mode === "online"){ RACE.sendT -= dt; if (RACE.sendT <= 0){ RACE.sendT = 0.07; const P = RACE.p[0]; rSend({t:"st", x:P.x, y:P.y, f:P.face, fin:P.fin, tm:P.time}); } }
+    const meDone = RACE.p.every(P => P.fin), oppDone = RACE.mode !== "online" || (RACE.ghost && RACE.ghost.fin);
+    if (meDone && !oppDone){ RACE.endT += dt; }
+    if ((meDone && oppDone) || (meDone && RACE.endT > 45)) raceResults();
+  },
+  draw(){
+    if (!RACE.p) return;
+    if (RACE.n === 2){
+      rView(RACE.p[0], [{...RACE.p[1], label:"J2"}], 0, 0, W, H/2 - 2, 0.5, "JOUEUR 1");
+      rView(RACE.p[1], [{...RACE.p[0], label:"J1"}], 0, H/2 + 2, W, H/2 - 2, 0.5, "JOUEUR 2");
+      g.fillStyle = "#14121f"; g.fillRect(0, H/2 - 2, W, 4);
+    } else {
+      const others = RACE.ghost ? [{...RACE.ghost, idx:1, label:"Adversaire"}] : [];
+      rView(RACE.p[0], others, 0, 0, W, H, 1, RACE.mode === "online" ? "TOI" : "CONTRE LA MONTRE");
+    }
+    if (RACE.count > 0){ const n = Math.ceil(RACE.count); g.fillStyle = "#000a"; g.fillRect(W/2 - 110, H/2 - 60, 220, 120); g.fillStyle = n <= 0 ? "#5ee6a0" : "#ffc93c"; font(76); g.textAlign = "center"; g.fillText(n > 3 ? "Prêts ?" : n <= 0 ? "GO !" : String(n), W/2, H/2 + 26); }
+  }
+};
+
+// ---------- résultats ----------
+function raceResults(){
+  RACE.over = true; AudioSys.stop(); AudioSys.sfx("win");
+  let rows = [], title;
+  if (RACE.mode === "solo"){
+    const P = RACE.p[0], best = SAVE.raceBest, rec = !best || P.time < best; if (rec){ SAVE.raceBest = P.time; persist(); }
+    title = rec ? "Nouveau record !" : "Course terminée";
+    rows = [{n:"Toi", c:RACE_COL[0], t:P.time, r:P.right, w:P.wrong}];
+    rows.push({n:"Record", c:"#ffc93c", t:SAVE.raceBest, r:null});
+  } else if (RACE.mode === "local"){
+    rows = RACE.p.map((P, i) => ({n:`Joueur ${i+1}`, c:RACE_COL[i], t:P.time, r:P.right, w:P.wrong}));
+    const w = rows[0].t <= rows[1].t ? 0 : 1; title = `Joueur ${w+1} gagne !`;
+  } else {
+    const P = RACE.p[0], G = RACE.ghost;
+    rows = [{n:"Toi", c:RACE_COL[0], t:P.time, r:P.right, w:P.wrong}, {n:"Adversaire", c:RACE_COL[1], t:G.fin ? G.time : null, r:G.right, w:G.wrong}];
+    title = !G.fin || G.time == null || P.time <= G.time ? "Tu as gagné !" : "Tu as perdu…";
+  }
+  const sorted = rows.slice().sort((a,b) => (a.t ?? 1e9) - (b.t ?? 1e9));
+  const html = `<h2>${title}</h2><div class="rres">${sorted.map((r,i) => `<div style="--c:${r.c}"><b>${r.n === "Record" ? "★" : (i+1) + "."} ${r.n}</b><span class="rt">${r.t != null ? fmtT(r.t) : "pas arrivé"}</span>${r.r != null ? `<span>Bons blocs : ${r.r} · fausses manips : ${r.w}</span>` : ""}</div>`).join("")}</div>
+    <p>Chaque bonne réponse donne un turbo de 3 s, chaque erreur coûte 1,5 s.</p>
+    <div class="rmodes"><button class="btn gold" id="rAgain" type="button">${RACE.mode === "online" ? (RACE.role === "host" ? "Nouvelle course" : "Demander une revanche") : "Nouvelle course"}</button><button class="btn" id="rMap" type="button">Retour à la carte</button></div><p class="rstatus" id="rStatus"></p>`;
+  raceUI("results", html);
+  $("rAgain").onclick = () => {
+    if (RACE.mode === "online"){ if (RACE.role === "host") raceHostGo(); else { rSend({t:"again"}); rStatus("Demande envoyée…"); } }
+    else startRace(RACE.mode, (Math.random()*1e9)|0);
+  };
+  $("rMap").onclick = () => quitToMenu();
+}
+
+// ---------- réseau ----------
+const RPeer = location.hash === "#bctest" ? RaceFakePeer() : (typeof Peer !== "undefined" ? Peer : null);
+const RPREFIX = "course-ppm-st4-";
+function rSend(m){ try { if (RACE.conn && RACE.conn.open !== false) RACE.conn.send(m); } catch(e){} }
+function raceNetClose(){ try { RACE.conn && RACE.conn.close(); } catch(e){} try { RACE.peer && RACE.peer.destroy(); } catch(e){} RACE.conn = null; RACE.peer = null; RACE.role = null; clearTimeout(RACE.to); }
+function raceHost(){
+  if (!RPeer) return;
+  $("rOnChoice").hidden = true; $("rHostBox").hidden = false;
+  const tryHost = () => {
+    const code = Array.from({length:4}, () => "ABCDEFGHJKMNPQRSTUVWXYZ"[Math.floor(Math.random()*23)]).join("");
+    rStatus("Création de la course…");
+    const peer = new RPeer(RPREFIX + code.toLowerCase()); RACE.peer = peer; RACE.role = "host";
+    peer.on("open", () => { $("rCode").textContent = code; rStatus("En attente de ton adversaire… Il choisit « Rejoindre une course » et tape ce code."); });
+    peer.on("error", err => { if (err && err.type === "unavailable-id"){ try { peer.destroy(); } catch(e){} tryHost(); } else rStatus("Erreur réseau (" + (err && err.type || "inconnue") + "). Vérifie la connexion Internet."); });
+    peer.on("connection", conn => { if (RACE.conn) return; RACE.conn = conn; conn.on("data", raceData); conn.on("close", raceLost); conn.on("open", () => { rStatus("Adversaire connecté !"); setTimeout(raceHostGo, 400); }); });
+  };
+  tryHost();
+}
+function raceHostGo(){ const seed = (Math.random()*1e9)|0; rSend({t:"go", seed}); startRace("online", seed); }
+function raceJoin(){
+  if (!RPeer) return;
+  const code = $("rCodeIn").value.trim().toUpperCase(); if (code.length !== 4){ rStatus("Le code contient 4 lettres."); return; }
+  rStatus("Connexion à la course " + code + "…");
+  const peer = new RPeer(); RACE.peer = peer; RACE.role = "guest";
+  peer.on("error", err => rStatus(err && err.type === "peer-unavailable" ? "Aucune course avec ce code. Vérifie le code." : "Erreur réseau (" + (err && err.type || "inconnue") + ")."));
+  peer.on("open", () => { const conn = peer.connect(RPREFIX + code.toLowerCase(), {reliable:true, serialization:"json"}); RACE.conn = conn; conn.on("data", raceData); conn.on("close", raceLost); conn.on("open", () => rStatus("Connecté ! La course va commencer…")); });
+  clearTimeout(RACE.to); RACE.to = setTimeout(() => { if (scene !== RaceScene) rStatus("La connexion prend du temps. Le réseau de l'école bloque peut-être les connexions entre appareils : essaie le partage de connexion d'un cellulaire."); }, 12000);
+}
+function raceData(d){
+  if (!d || !d.t) return;
+  if (d.t === "go"){ clearTimeout(RACE.to); startRace("online", d.seed); }
+  else if (d.t === "st" && RACE.ghost){ Object.assign(RACE.ghost, {x:d.x, y:d.y, face:d.f, fin:d.fin || RACE.ghost.fin, time:d.tm}); }
+  else if (d.t === "fin" && RACE.ghost){ Object.assign(RACE.ghost, {fin:true, time:d.tm, right:d.r, wrong:d.w}); }
+  else if (d.t === "again" && RACE.role === "host" && RACE.over) raceHostGo();
+}
+function raceLost(){ if (!RACE.active) return; const wasRacing = scene === RaceScene && !RACE.over; raceNetClose(); if (wasRacing && RACE.ghost){ RACE.ghost.fin = true; RACE.ghost.time = null; } if (!wasRacing){ raceUI("online"); rStatus("La connexion avec l'adversaire a été perdue."); } }
+function RaceFakePeer(){
+  const bc = new BroadcastChannel("course-fakepeer");
+  class Ev { constructor(){ this.h = {}; } on(e, f){ (this.h[e] = this.h[e] || []).push(f); } emit(e, a){ (this.h[e] || []).forEach(f => f(a)); } }
+  class FConn extends Ev { constructor(peer, rid){ super(); this.peer = peer; this.rid = rid; this.open = false; } send(d){ bc.postMessage({to:this.rid, from:this.peer.id, type:"data", data:d}); } close(){ bc.postMessage({to:this.rid, from:this.peer.id, type:"close"}); } }
+  return class FPeer extends Ev {
+    constructor(id){ super(); this.id = id || "g" + Math.random().toString(36).slice(2,8); this.c = {}; bc.addEventListener("message", ev => this.msg(ev.data)); setTimeout(() => this.emit("open", this.id), 30); }
+    connect(rid){ const c = new FConn(this, rid); this.c[rid] = c; bc.postMessage({to:rid, from:this.id, type:"connect"}); return c; }
+    msg(m){ if (m.to !== this.id) return; const c = this.c[m.from];
+      if (m.type === "connect"){ const n = new FConn(this, m.from); this.c[m.from] = n; this.emit("connection", n); setTimeout(() => { n.open = true; n.emit("open"); bc.postMessage({to:m.from, from:this.id, type:"accept"}); }, 20); }
+      else if (m.type === "accept" && c){ c.open = true; c.emit("open"); } else if (m.type === "data" && c) c.emit("data", m.data); else if (m.type === "close" && c) c.emit("close"); }
+    destroy(){}
+  };
+}
+
+// nettoyage quand on revient à la carte
+const _quitToMenu = quitToMenu;
+quitToMenu = function(){ if (RACE.active){ RACE.active = false; RACE.p = null; raceNetClose(); $("raceUI").hidden = true; $("racePads").hidden = true; $("pad").hidden = false; } _quitToMenu(); };
 // ================= DÉMARRAGE =================
 $("btnCodex").addEventListener("click", () => openCodex());
 const sb = $("btnSound");

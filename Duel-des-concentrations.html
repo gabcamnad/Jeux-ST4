@@ -1,0 +1,761 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Duel des concentrations</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@500;700&family=Atkinson+Hyperlegible:wght@400;700&display=swap">
+<script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<style>
+/* Arcade cabinet: one 16:9 fight stage; DOM screens (menu, choix, salle en ligne, fin) overlay it; touch pads below. */
+:root{
+  color-scheme: dark;
+  --cab:#120f1c; --panel:#221c36; --line:#3a3160; --ink:#f4efe0; --dim:#a7a1bf;
+  --p1:#5ee6c8; --p2:#ff7a59; --gold:#ffc93c; --hit:#ff5d6c; --ok:#5ee6a0;
+  --f-display:"Pixelify Sans","Courier New",monospace;
+  --f-body:"Atkinson Hyperlegible","Segoe UI",system-ui,sans-serif;
+}
+[hidden]{display:none!important}
+html,body{background:var(--cab);color:var(--ink);margin:0}
+body{font-family:var(--f-body);font-size:15px;padding:12px max(16px,env(safe-area-inset-left)) 24px max(16px,env(safe-area-inset-right))}
+.wrap{max-width:1100px;margin:0 auto;display:flex;flex-direction:column;gap:10px}
+header{display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap}
+h1{font-family:var(--f-display);font-size:clamp(22px,3.6vw,34px);margin:0}
+h1 span{color:var(--gold)}
+header p{margin:0;color:var(--dim);font-size:13px}
+.stage{position:relative;width:100%;aspect-ratio:16/9;background:#000;border-radius:8px;overflow:hidden;box-shadow:0 0 0 3px var(--line),0 18px 50px #0008;touch-action:none}
+.stage > canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+.scr{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:clamp(8px,1.6vw,16px);padding:3%;background:radial-gradient(ellipse at 50% 30%,#2b2350,#120f1cee 70%);text-align:center;overflow:auto}
+.scr h2{font-family:var(--f-display);font-size:clamp(22px,4.4vw,46px);margin:0;text-shadow:3px 3px 0 #000}
+.scr h2 em{font-style:normal;color:var(--gold)}
+.scr p{margin:0;max-width:60ch;line-height:1.45;font-size:clamp(13px,1.6vw,16px)}
+.row{display:flex;gap:10px;flex-wrap:wrap;justify-content:center}
+button{font-family:var(--f-display);cursor:pointer}
+button:focus-visible,input:focus-visible{outline:3px solid var(--gold);outline-offset:2px}
+.btn{background:var(--panel);color:var(--ink);border:2px solid var(--line);border-radius:6px;padding:10px 16px;font-size:clamp(14px,1.7vw,18px);font-weight:700;box-shadow:0 4px 0 #0009}
+.btn:hover{border-color:var(--gold)}
+.btn:active{transform:translateY(2px);box-shadow:none}
+.btn.go{background:var(--gold);color:#2a1c00;border-color:#b98a10}
+.btn small{display:block;font-family:var(--f-body);font-weight:400;font-size:12px;opacity:.85;margin-top:3px}
+.modes{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;width:min(860px,100%)}
+.modes .btn{padding:14px 12px}
+.chars{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;width:min(900px,100%)}
+.char canvas{max-width:110px!important}
+.char{background:var(--panel);border:3px solid var(--line);border-radius:8px;padding:8px;color:var(--ink);display:flex;flex-direction:column;align-items:center;gap:4px;min-width:0}
+.char canvas{width:100%;max-width:140px;aspect-ratio:1;height:auto}
+.char b{font-family:var(--f-display);font-size:clamp(14px,1.8vw,19px)}
+.char span{font-family:var(--f-body);font-size:12px;color:var(--dim);line-height:1.3}
+.char.p1{border-color:var(--p1)} .char.p2{border-color:var(--p2)} .char.p1.p2{border-color:var(--gold)}
+.lvls{display:flex;flex-direction:column;gap:6px;align-items:center;width:min(900px,100%)}
+.lvlh{font-family:var(--f-display);color:var(--gold);font-size:clamp(13px,1.6vw,16px);letter-spacing:.06em;text-transform:uppercase}
+.lvlrow{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;width:100%}
+.lvl{background:var(--panel);color:var(--ink);border:2px solid var(--line);border-radius:8px;padding:8px 10px;display:flex;flex-direction:column;gap:2px;text-align:center;min-width:0}
+.lvl b{font-family:var(--f-display);font-size:clamp(14px,1.8vw,18px)}
+.lvl span{font-family:var(--f-body);font-size:clamp(11px,1.25vw,13px);color:var(--dim);line-height:1.3}
+.lvl.on{border-color:var(--gold);background:#3a2f10}
+.lvl.on b{color:var(--gold)}
+.code{font-family:var(--f-display);font-size:clamp(34px,7vw,72px);letter-spacing:.18em;color:var(--gold);text-shadow:3px 3px 0 #000}
+.status{font-size:14px;color:var(--dim);min-height:1.4em}
+input.codein{font-family:var(--f-display);font-size:28px;letter-spacing:.2em;text-transform:uppercase;width:7ch;text-align:center;background:#0b0914;color:var(--ink);border:2px solid var(--line);border-radius:6px;padding:6px}
+.how{text-align:left;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 24px;max-width:860px;font-size:clamp(12px,1.4vw,14.5px);line-height:1.45}
+.how h3{font-family:var(--f-display);margin:0 0 4px;color:var(--gold);font-size:16px}
+.how p{margin:0}
+kbd{font-family:var(--f-display);background:var(--panel);border:1px solid var(--line);border-bottom-width:3px;border-radius:3px;padding:0 5px}
+.miss{text-align:left;max-width:780px;width:100%;display:flex;flex-direction:column;gap:6px}
+.miss div{background:#0006;border-left:4px solid var(--hit);padding:6px 10px;font-size:clamp(12px,1.4vw,14px);line-height:1.4;border-radius:0 4px 4px 0}
+.score{display:flex;gap:24px;justify-content:center;flex-wrap:wrap;font-size:clamp(13px,1.6vw,16px)}
+.score div{background:#0006;border-radius:6px;padding:8px 14px;border-top:4px solid var(--c)}
+.pads{display:none;justify-content:space-between;gap:12px;user-select:none;-webkit-user-select:none;touch-action:none}
+.pad{display:grid;grid-template-columns:repeat(3,52px);grid-template-rows:repeat(2,48px);gap:6px}
+.pad button{font-size:18px;background:var(--panel);color:var(--ink);border:2px solid var(--line);border-radius:10px;padding:0}
+.pad button.on{filter:brightness(1.5)}
+.pad .a{background:#3a2a5a} .pad .p{background:#5a4a10;color:var(--gold)}
+.pad .a,.pad .p,.pad [data-k="d"]{font-size:13px;letter-spacing:.02em}
+.pad.p1 button{border-color:var(--p1)} .pad.p2 button{border-color:var(--p2)}
+@media (pointer:coarse){ .pads{display:flex} }
+.help{color:var(--dim);font-size:13px;display:flex;gap:16px;flex-wrap:wrap;margin:0}
+@media (max-width:720px){ .lvlrow{grid-template-columns:1fr} .modes{grid-template-columns:1fr} .chars{grid-template-columns:repeat(2,minmax(0,1fr))} .how{grid-template-columns:1fr} }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header><h1>Duel des <span>concentrations</span></h1><p>Science et technologie · 4<sup>e</sup> secondaire · ppm, g/L, %</p></header>
+  <div class="stage" id="stage">
+    <canvas id="cv" width="960" height="540" aria-label="Arène de combat"></canvas>
+
+    <section class="scr" id="sMenu">
+      <h2>Duel des <em>concentrations</em></h2>
+      <p>Ramasse des orbes de pouvoir pendant le combat. Pour activer un pouvoir, réponds à une question sur les concentrations : bonne réponse, il s'active ; mauvaise réponse, il est perdu !</p>
+      <div class="modes">
+        <button class="btn" id="mCpu" type="button">Contre l'ordinateur<small>Pour t'entraîner seul</small></button>
+        <button class="btn" id="mLocal" type="button">2 joueurs, même appareil<small>Clavier partagé ou iPad à deux</small></button>
+        <button class="btn go" id="mOnline" type="button">En ligne<small>Deux appareils, un code de partie</small></button>
+      </div>
+      <div class="row"><button class="btn" id="mHow" type="button">Comment jouer</button><button class="btn" id="mSound" type="button">Son : activé</button></div>
+    </section>
+
+    <section class="scr" id="sHow" hidden>
+      <h2>Comment jouer</h2>
+      <div class="how">
+        <div><h3>Joueur 1 (gauche)</h3><p><kbd>A</kbd> <kbd>D</kbd> bouger · <kbd>W</kbd> sauter · <kbd>S</kbd> bloquer · <kbd>F</kbd> frapper · <kbd>G</kbd> pouvoir · <kbd>1</kbd>–<kbd>4</kbd> répondre</p></div>
+        <div><h3>Joueur 2 (droite)</h3><p><kbd>←</kbd> <kbd>→</kbd> bouger · <kbd>↑</kbd> sauter · <kbd>↓</kbd> bloquer · <kbd>K</kbd> frapper · <kbd>L</kbd> pouvoir · <kbd>7</kbd> <kbd>8</kbd> <kbd>9</kbd> <kbd>0</kbd> répondre</p></div>
+        <div><h3>Les pouvoirs</h3><p>Touche une orbe pour la garder (2 au maximum). Active-la avec la touche pouvoir : une question apparaît de ton côté. Tu as 10 secondes. Pendant que tu réfléchis, tu ne bouges plus, mais tu encaisses 2 fois moins de dégâts.</p></div>
+        <div><h3>Les 6 pouvoirs</h3><p>Jet concentré (gros projectile) · Bouclier tampon (absorbe 40) · Soluté régénérant (+35 de vie) · Précipité (immobilise l'adversaire) · Dilution (l'adversaire frappe 2 fois moins fort) · Saturation (tu frappes 2 fois plus fort).</p></div>
+        <div><h3>Sur iPad</h3><p>Utilise les boutons sous l'arène. Pour répondre, touche directement le choix dans ta boîte de question.</p></div>
+        <div><h3>Niveaux</h3><p>Facile : conversions directes, 15 s pour répondre. Moyen : mL → L, g/L, dilution, % → ppm, 10 s. Difficile : calculs en plusieurs étapes, ppm → %, comparaison à une norme, 7 s. Contre l'ordinateur, le niveau rend aussi l'adversaire plus fort.</p></div>
+        <div><h3>Victoire</h3><p>2 manches gagnantes. Le niveau de liquide de ton personnage montre ta vie !</p></div>
+      </div>
+      <button class="btn go" id="howBack" type="button">Retour</button>
+    </section>
+
+    <section class="scr" id="sSelect" hidden>
+      <h2 id="selTitle">Choisis ton personnage</h2>
+      <div class="chars" id="chars"></div>
+      <div class="lvls" role="group" aria-label="Niveau de difficulté"><span class="lvlh">Niveau des questions</span><div class="lvlrow" id="diffs"></div></div>
+      <p class="status" id="diffNote"></p>
+      <p class="status" id="selHint"></p>
+      <div class="row"><button class="btn" id="selBack" type="button">Retour</button><button class="btn go" id="selGo" type="button" disabled>Combattre !</button></div>
+    </section>
+
+    <section class="scr" id="sOnline" hidden>
+      <h2>Partie en ligne</h2>
+      <p>Les deux appareils doivent être connectés à Internet. Un joueur crée la partie et donne le code à l'autre.</p>
+      <div class="row" id="onChoice"><button class="btn go" id="onHost" type="button">Créer une partie</button><button class="btn" id="onJoinShow" type="button">Rejoindre une partie</button></div>
+      <div id="onHostBox" hidden><p>Donne ce code à ton adversaire :</p><div class="code" id="onCode">····</div></div>
+      <div id="onJoinBox" class="row" hidden><input class="codein" id="onCodeIn" maxlength="4" autocomplete="off" aria-label="Code de la partie" placeholder="CODE"><button class="btn go" id="onJoin" type="button">Rejoindre</button></div>
+      <p class="status" id="onStatus" aria-live="polite"></p>
+      <button class="btn" id="onBack" type="button">Annuler</button>
+    </section>
+
+    <section class="scr" id="sEnd" hidden>
+      <h2 id="endTitle"></h2>
+      <div class="score" id="endScore"></div>
+      <div class="miss" id="endMiss"></div>
+      <div class="row"><button class="btn go" id="endAgain" type="button">Revanche</button><button class="btn" id="endMenu" type="button">Menu</button></div>
+      <p class="status" id="endStatus"></p>
+    </section>
+  </div>
+
+  <div class="pads" id="pads">
+    <div class="pad p1" data-pad="0">
+      <button type="button" data-k="l" aria-label="Gauche">◀</button><button type="button" data-k="u" aria-label="Sauter">▲</button><button type="button" data-k="r" aria-label="Droite">▶</button>
+      <button type="button" data-k="d" aria-label="Bloquer">🛡</button><button type="button" class="a" data-k="a" aria-label="Frapper">✊</button><button type="button" class="p" data-k="p" aria-label="Pouvoir">⚡</button>
+    </div>
+    <div class="pad p2" data-pad="1">
+      <button type="button" data-k="l" aria-label="Gauche">◀</button><button type="button" data-k="u" aria-label="Sauter">▲</button><button type="button" data-k="r" aria-label="Droite">▶</button>
+      <button type="button" data-k="d" aria-label="Bloquer">🛡</button><button type="button" class="a" data-k="a" aria-label="Frapper">✊</button><button type="button" class="p" data-k="p" aria-label="Pouvoir">⚡</button>
+    </div>
+  </div>
+  <p class="help"><span>Joueur 1 : <kbd>A</kbd><kbd>D</kbd> <kbd>W</kbd> <kbd>S</kbd> · <kbd>F</kbd> frapper · <kbd>G</kbd> pouvoir · <kbd>1</kbd>–<kbd>4</kbd></span><span>Joueur 2 : flèches · <kbd>K</kbd> frapper · <kbd>L</kbd> pouvoir · <kbd>7</kbd>–<kbd>0</kbd></span><span><kbd>Échap</kbd> menu</span></p>
+</div>
+<script>
+// ================= DUEL DES CONCENTRATIONS =================
+const W = 960, H = 540, GROUND = 450;
+const cv = document.getElementById("cv"), g = cv.getContext("2d");
+const $ = id => document.getElementById(id);
+const rnd = (a,b) => a + Math.random()*(b-a);
+const clamp = (v,a,b) => Math.max(a, Math.min(b, v));
+const pk = a => a[Math.floor(Math.random()*a.length)];
+const shuffle = a => { a = a.slice(); for (let i=a.length-1;i>0;i--){ const j = Math.floor(Math.random()*(i+1)); [a[i],a[j]] = [a[j],a[i]]; } return a; };
+const cl = n => Number(Number(n).toPrecision(10));
+const nf = n => cl(n).toLocaleString("fr-CA", {maximumFractionDigits:4});
+const vol = L => L < 1 ? `${nf(L*1000)} mL` : `${nf(L)} L`;
+const dec = (n, d) => Math.abs(n*Math.pow(10,d) - Math.round(n*Math.pow(10,d))) < 1e-9;
+
+// ---------- Questions (nouvelles valeurs à chaque fois) ----------
+const RAW = [
+  () => { let mg, mL, C; do { mg = pk([0.5,1,1.5,2,2.5,3,4,5,6,8,9,12]); mL = pk([100,200,250,500]); C = mg/(mL/1000); } while (!dec(C,2)); return {q:`${nf(mg)} mg de soluté dans ${mL} mL de solution aqueuse. Concentration ?`, ans:C, wr:[mg*mL/1000, C*1000, C/10, mg/mL], u:"ppm", e:`${mL} mL = ${nf(mL/1000)} L ; C = ${nf(mg)} mg ÷ ${nf(mL/1000)} L = ${nf(C)} ppm.`}; },
+  () => { let C, V, m; do { C = pk([2,4,5,6,8,10,12,15,20,25,40]); V = pk([0.1,0.2,0.25,0.5,1.5,2,3]); m = C*V; } while (!dec(m,2)); return {q:`Masse de soluté pour préparer ${vol(V)} d'une solution à ${C} ppm ?`, ans:cl(m), wr:[C/V, m*1000, m*10, C+V], u:"mg", e:`m = C × V = ${C} mg/L × ${nf(V)} L = ${nf(m)} mg.`}; },
+  () => { let C, m, V; do { C = pk([2,4,5,8,10,20,25]); m = pk([1,2,4,5,10,20,40,50]); V = m/C; } while (!dec(V,2) || V > 20); return {q:`Avec ${m} mg de soluté, quel volume préparer pour obtenir ${C} ppm ?`, ans:cl(V), wr:[m*C, V*1000, C/m, V*10], u:"L", e:`V = m ÷ C = ${m} mg ÷ ${C} mg/L = ${nf(V)} L.`}; },
+  () => { let gr, mL, C; do { gr = pk([2,3,4,5,6,9,12,15]); mL = pk([100,200,250,500]); C = gr/(mL/1000); } while (!dec(C,2)); return {q:`${gr} g de sel dissous dans ${mL} mL de solution. Concentration en g/L ?`, ans:C, wr:[gr/mL, C/1000, C*1000, gr*mL/1000], u:"g/L", e:`${mL} mL = ${nf(mL/1000)} L ; C = ${gr} g ÷ ${nf(mL/1000)} L = ${nf(C)} g/L.`}; },
+  () => { const C = pk([12,20,30,40,60,90,120]), k = pk([2,3,4]), w = {2:"double",3:"triple",4:"quadruple"}[k]; return {q:`On dilue une solution à ${C} ppm : son volume ${w}. Nouvelle concentration ?`, ans:cl(C/k), wr:[C*k, C, C-k], u:"ppm", e:`La masse de soluté reste la même, le volume est ×${k} : ${C} ÷ ${k} = ${nf(C/k)} ppm.`}; },
+  () => { const x = pk([0.5,2,7.5,12,40,0.08,3.2]); return {q:`Dans l'eau, ${nf(x)} mg/L = combien de ppm ?`, ans:x, wr:[x*1000, x/1000, x*10], u:"ppm", e:`Dans l'eau, 1 mg/L = 1 ppm.`}; },
+  () => { const x = pk([0.002,0.015,0.2,1.5,0.05,0.008,0.03]); return {q:`Convertis ${nf(x)} g/L en ppm.`, ans:cl(x*1000), wr:[x*100, x*10000, x*1e6, x], u:"ppm", e:`1 g/L = 1000 ppm : ${nf(x)} × 1000 = ${nf(x*1000)} ppm.`}; },
+  () => { const x = pk([250,40,3000,8,600,75]); return {q:`Convertis ${nf(x)} ppm en g/L.`, ans:cl(x/1000), wr:[x/100, x/10000, x*1000], u:"g/L", e:`On divise par 1000 : ${nf(x)} ppm = ${nf(x/1000)} g/L.`}; },
+  () => { const x = pk([0.1,0.002,1,0.05,2.5,0.4,0.0005]); return {q:`Convertis ${nf(x)} % en ppm.`, ans:cl(x*10000), wr:[x*1000, x*100, x*100000], u:"ppm", e:`1 % = 10 000 ppm : ${nf(x)} × 10 000 = ${nf(x*10000)} ppm.`}; },
+  () => { const x = pk([5000,200,30000,50,1500,8]); return {q:`Convertis ${nf(x)} ppm en %.`, ans:cl(x/10000), wr:[x/1000, x/100, x/100000], u:"%", e:`On divise par 10 000 : ${nf(x)} ppm = ${nf(x/10000)} %.`}; },
+  () => { const [mg, kg] = pk([[4,2],[12,3],[0.8,0.4],[30,5],[1.5,0.5],[9,4.5]]); const a = mg/kg; return {q:`${nf(mg)} mg de plomb dans ${nf(kg)} kg de sol. Concentration en ppm ?`, ans:cl(a), wr:[a*1000, mg*kg, a/1000], u:"ppm", e:`Dans un solide, 1 ppm = 1 mg/kg : ${nf(mg)} ÷ ${nf(kg)} = ${nf(a)} ppm.`}; },
+  () => { const N = pk([5,10,20]), up = cl(N*pk([1.5,2,3])); const views = [[`${nf(up/1000)} g/L`, up], [`${nf(N*0.5/1000)} g/L`, N*0.5], [`${nf(N*0.2)} mg/L`, N*0.2], [`${nf(N*0.8/10000)} %`, N*0.8]]; return {q:`La norme est de ${N} ppm. Quelle mesure la DÉPASSE ?`, ansTxt:views[0][0], wrTxt:views.slice(1).map(v => v[0]), e:views.map(v => `${v[0]} = ${nf(v[1])} ppm`).join(" · ") + "."}; }
+];
+// Niveau de chaque générateur (même ordre que RAW) : 1 facile · 2 moyen · 3 difficile
+const LVL = [2,2,3,2,2,1,1,2,2,3,2,3];
+const EASY = [
+  () => { const C = pk([2,3,4,5,6,8,10]), L = pk([1,2,3,4,5]); return {q:`${C*L} mg de soluté dans ${L} L de solution. Concentration en ppm ?`, ans:C, wr:[C*L*L, C*L, C*1000, L], u:"ppm", e:`C = m ÷ V = ${C*L} mg ÷ ${L} L = ${C} mg/L = ${C} ppm.`}; },
+  () => { const C = pk([2,3,4,5,10,20]), L = pk([1,2,3,4,5]); return {q:`Masse de soluté dans ${L} L d'une solution à ${C} ppm ?`, ans:C*L, wr:[C/L, C, C*L*1000, C+L], u:"mg", e:`m = C × V = ${C} mg/L × ${L} L = ${C*L} mg.`}; },
+  () => { const x = pk([1,2,3,5,8,10,15,25]); return {q:`Dans l'eau, ${x} mg/L = combien de ppm ?`, ans:x, wr:[x*1000, x/1000, x*10], u:"ppm", e:`Dans l'eau, 1 mg/L = 1 ppm : ${x} mg/L = ${x} ppm.`}; },
+  () => { const x = pk([1,2,3,4,5]); return {q:`Convertis ${x} g/L en ppm.`, ans:x*1000, wr:[x*100, x, x*10000], u:"ppm", e:`1 g/L = 1000 ppm : ${x} × 1000 = ${x*1000} ppm.`}; },
+  () => { const [mg, kg] = pk([[4,2],[6,3],[10,5],[8,4],[9,3]]); return {q:`${mg} mg de plomb dans ${kg} kg de sol. Concentration en ppm ?`, ans:mg/kg, wr:[mg*kg, mg, mg/kg*1000], u:"ppm", e:`Dans un solide, 1 ppm = 1 mg/kg : ${mg} ÷ ${kg} = ${mg/kg} ppm.`}; }
+];
+const HARD = [
+  () => { let gr, mL, C; do { gr = pk([0.002,0.005,0.01,0.003,0.004]); mL = pk([200,250,500]); C = gr*1000/(mL/1000); } while (!dec(C,2)); return {q:`${nf(gr)} g de soluté dans ${mL} mL de solution aqueuse. Concentration en ppm ?`, ans:cl(C), wr:[gr/(mL/1000), C*1000, gr*1000*mL/1000, C/10], u:"ppm", e:`${nf(gr)} g = ${nf(gr*1000)} mg et ${mL} mL = ${nf(mL/1000)} L ; C = ${nf(gr*1000)} ÷ ${nf(mL/1000)} = ${nf(C)} ppm.`}; },
+  () => { const pc = pk([0.002,0.005,0.0015,0.004]), L = pk([0.5,2,3]); const ppm = cl(pc*10000), m = cl(ppm*L); return {q:`Quelle masse de soluté (en mg) contient ${vol(L)} d'une solution à ${nf(pc)} % ?`, ans:m, wr:[pc*L, m*1000, ppm, m/10], u:"mg", e:`${nf(pc)} % = ${nf(ppm)} ppm = ${nf(ppm)} mg/L ; m = ${nf(ppm)} × ${nf(L)} L = ${nf(m)} mg.`}; }
+];
+function makeQ(lv){
+  lv = lv || 2;
+  let pool;
+  if (lv === 1) pool = EASY.concat(RAW.filter((_, i) => LVL[i] === 1));
+  else if (lv === 3) pool = HARD.concat(RAW.filter((_, i) => LVL[i] >= 2));
+  else pool = RAW.filter((_, i) => LVL[i] <= 2).concat(EASY.slice(0, 2));
+  const r = pk(pool)();
+
+  let o;
+  if (r.ansTxt) o = [r.ansTxt, ...r.wrTxt];
+  else {
+    const f = v => `${nf(v)} ${r.u}`; o = [f(r.ans)];
+    for (const w of r.wr){ if (!(w > 0) || !isFinite(w)) continue; const t = f(cl(w)); if (!o.includes(t)) o.push(t); if (o.length === 4) break; }
+    let k = 2; while (o.length < 4){ const t = f(cl(r.ans*k*1.5)); if (!o.includes(t)) o.push(t); k++; }
+  }
+  const order = shuffle([0,1,2,3]);
+  return {q:r.q, o:order.map(i => o[i]), a:order.indexOf(0), e:r.e};
+}
+
+// ---------- Personnages et pouvoirs ----------
+const CHARS = {
+  becher:{name:"Bécher", hp:160, spd:230, dmg:1.1, reach:62, col:"#5ee6c8", txt:"Costaud et lent. Plus de vie."},
+  pipette:{name:"Pipette", hp:120, spd:330, dmg:0.95, reach:74, col:"#ffc93c", txt:"Très rapide, mais fragile."},
+  erlen:{name:"Erlenmeyer", hp:140, spd:280, dmg:1.0, reach:66, col:"#b48cff", txt:"Équilibré dans tout."},
+  burette:{name:"Burette", hp:130, spd:260, dmg:0.95, reach:96, col:"#ff7a59", txt:"Très longue portée."}
+};
+const CHAR_IDS = Object.keys(CHARS);
+const DIFF = {
+  1:{name:"Facile", time:15, ai:{ok:0.45, think:[4,8], block:0.25, cool:[0.6,1.2]}, d:"Conversions directes, volumes en litres · 15 s pour répondre"},
+  2:{name:"Moyen", time:10, ai:{ok:0.6, think:[2.5,6], block:0.5, cool:[0.3,0.75]}, d:"mL → L, g/L, dilution, % → ppm · 10 s pour répondre"},
+  3:{name:"Difficile", time:7, ai:{ok:0.78, think:[1.8,4.5], block:0.7, cool:[0.2,0.5]}, d:"Calculs en plusieurs étapes, ppm → %, normes · 7 s pour répondre"}
+};
+const POW = {
+  jet:{name:"Jet concentré", short:"JET", col:"#ff5d6c", d:"gros projectile"},
+  tampon:{name:"Bouclier tampon", short:"BOUC", col:"#9fd4f5", d:"absorbe 30 dégâts"},
+  regen:{name:"Soluté régénérant", short:"SOIN", col:"#5ee6a0", d:"+35 de vie"},
+  precip:{name:"Précipité", short:"PRÉC", col:"#e8eef2", d:"immobilise l'adversaire"},
+  dilution:{name:"Dilution", short:"DIL", col:"#5b8cff", d:"l'adversaire frappe ½"},
+  sature:{name:"Saturation", short:"SAT", col:"#ffc93c", d:"tes coups ×2"}
+};
+const POW_IDS = Object.keys(POW);
+
+// ---------- Son ----------
+let SOUND = true, ac = null;
+try { SOUND = localStorage.getItem("duel-son") !== "0"; } catch(e){}
+function beep(kind){
+  if (!SOUND) return;
+  try { ac = ac || new (window.AudioContext || window.webkitAudioContext)(); if (ac.state === "suspended") ac.resume(); } catch(e){ return; }
+  const S = {hit:[[180,.08,"square"],[90,.1,"sawtooth"]], block:[[600,.05,"square"]], swing:[[320,.05,"triangle"]], jump:[[300,.08,"square"]], orb:[[880,.06,"square"],[1320,.12,"square"]], good:[[660,.08,"square"],[880,.08,"square"],[1175,.14,"square"]], bad:[[260,.16,"sawtooth"],[170,.24,"sawtooth"]], power:[[220,.06,"square"],[440,.06,"square"],[880,.12,"square"]], ko:[[440,.15,"square"],[330,.15,"square"],[220,.35,"square"]], bell:[[988,.4,"triangle"]]}[kind] || [];
+  let t = ac.currentTime;
+  S.forEach(([f,d,w]) => { const o = ac.createOscillator(), v = ac.createGain(); o.type = w; o.frequency.value = f; v.gain.setValueAtTime(.12, t); v.gain.exponentialRampToValueAtTime(.0008, t+d); o.connect(v); v.connect(ac.destination); o.start(t); o.stop(t+d+.02); t += d*0.85; });
+}
+
+// ---------- État de jeu ----------
+function newFighter(ch, side){
+  const C = CHARS[ch];
+  return {ch, side, x: side === 0 ? 260 : 700, y:GROUND, vx:0, vy:0, face: side === 0 ? 1 : -1, hp:C.hp, max:C.hp, on:true,
+    atk:0, hitDone:false, combo:0, comboT:0, stun:0, block:false, slots:[], q:null, qt:0, fb:null, shield:0, weak:0, strong:0, root:0, walk:0, wins:0,
+    st:{right:0, wrong:0, miss:[]}};
+}
+function newInput(){ return {l:false, r:false, u:false, d:false, a:false, p:false, eu:false, ea:false, ep:false, ans:-1}; }
+function newMatch(c1, c2, diff){
+  return {diff: diff || 2, f:[newFighter(c1,0), newFighter(c2,1)], inp:[newInput(), newInput()], orbs:[], proj:[], fx:[], round:1, time:75, phase:"intro", pt:2.2, orbT:3, msg:"", winner:-1, tick:0};
+}
+function resetRound(S){
+  S.f.forEach(f => { const w = f.wins, st = f.st; Object.assign(f, newFighter(f.ch, f.side)); f.wins = w; f.st = st; });
+  S.orbs = []; S.proj = []; S.time = 75; S.phase = "intro"; S.pt = 2.2; S.orbT = 3;
+}
+
+// ---------- Simulation (exécutée par l'hôte ou en local) ----------
+function dmgTo(S, att, def, base, kb){
+  if (def.hp <= 0) return;
+  let d = base * CHARS[att.ch].dmg * (att.strong > 0 ? 2 : 1) * (att.weak > 0 ? 0.5 : 1);
+  const facing = Math.sign(att.x - def.x) === def.face;
+  if (def.q) d *= 0.5;
+  if (def.block && facing && def.on && !def.root){ d *= 0.2; kb *= 0.3; S.fx.push({k:"block", x:def.x + def.face*30, y:def.y-70, t:0.25}); beep("block"); }
+  else { def.stun = 0.28; S.fx.push({k:"hit", x:def.x - def.face*10, y:def.y-70, t:0.3}); beep("hit"); }
+  if (def.shield > 0){ const ab = Math.min(def.shield, d); def.shield -= ab; d -= ab; }
+  def.hp = Math.max(0, def.hp - d);
+  def.vx = Math.sign(def.x - att.x || 1) * kb;
+  S.fx.push({k:"num", x:def.x, y:def.y-130, t:0.8, s:"-" + Math.round(d)});
+}
+function usePower(S, f, kind){
+  const o = S.f[1-f.side];
+  beep("power"); S.fx.push({k:"ring", x:f.x, y:f.y-60, t:0.6, c:POW[kind].col});
+  if (kind === "jet") S.proj.push({x:f.x + f.face*40, y:f.y-70, vx:f.face*560, owner:f.side, dmg:24, col:CHARS[f.ch].col, t:2.5});
+  else if (kind === "tampon") f.shield = 40;
+  else if (kind === "regen") f.hp = Math.min(f.max, f.hp + 35);
+  else if (kind === "precip") o.root = 2.6;
+  else if (kind === "dilution") o.weak = 7;
+  else if (kind === "sature") f.strong = 7;
+}
+function resolveQ(S, f, ans){
+  const q = f.q, ok = ans === q.a;
+  if (ok){ f.st.right++; usePower(S, f, q.kind); f.fb = {ok:true, h:`${POW[q.kind].name} activé !`, e:q.e, t:2.6}; beep("good"); }
+  else { f.st.wrong++; if (f.st.miss.length < 6) f.st.miss.push({q:q.q, a:q.o[q.a], e:q.e}); f.fb = {ok:false, h: ans < 0 ? `Temps écoulé ! Réponse : ${q.o[q.a]}` : `Pouvoir perdu ! Réponse : ${q.o[q.a]}`, e:q.e, t:3.4}; beep("bad"); }
+  f.q = null;
+}
+function step(S, dt){
+  S.tick++;
+  S.fx.forEach(e => e.t -= dt); S.fx = S.fx.filter(e => e.t > 0);
+  S.f.forEach(f => { if (f.fb){ f.fb.t -= dt; if (f.fb.t <= 0) f.fb = null; } });
+  if (S.phase === "intro"){ S.pt -= dt; if (S.pt <= 0){ S.phase = "fight"; beep("bell"); } physics(S, dt, false); clearEdges(S); return; }
+  if (S.phase === "roundEnd"){ S.pt -= dt; physics(S, dt, false); if (S.pt <= 0){ if (S.f.some(f => f.wins >= 2)){ S.phase = "matchEnd"; S.winner = S.f[0].wins >= 2 ? 0 : 1; } else { S.round++; resetRound(S); } } clearEdges(S); return; }
+  if (S.phase !== "fight"){ clearEdges(S); return; }
+  S.time -= dt;
+  for (const f of S.f){
+    const I = S.inp[f.side], o = S.f[1-f.side];
+    f.weak = Math.max(0, f.weak - dt); f.strong = Math.max(0, f.strong - dt); f.root = Math.max(0, f.root - dt);
+    f.stun = Math.max(0, f.stun - dt); f.comboT = Math.max(0, f.comboT - dt);
+    if (f.q){ f.q.t -= dt; if (I.ans >= 0) resolveQ(S, f, I.ans); else if (f.q.t <= 0) resolveQ(S, f, -1); }
+    I.ans = -1;
+    if (I.ep && f.slots.length && !f.q && f.hp > 0){ const kind = f.slots.shift(); const tq = DIFF[S.diff].time; f.q = Object.assign(makeQ(S.diff), {kind, t:tq, max:tq}); f.fb = null; f.atk = 0; }
+    const free = !f.q && f.stun <= 0 && f.root <= 0 && f.hp > 0;
+    f.block = free && I.d && f.on && f.atk <= 0;
+    if (free && f.atk <= 0 && !f.block){
+      const dir = (I.r ? 1 : 0) - (I.l ? 1 : 0);
+      f.vx = dir * CHARS[f.ch].spd; f.walk += Math.abs(dir)*dt;
+      if (I.eu && f.on){ f.vy = -820; f.on = false; beep("jump"); }
+      if (I.ea){ f.combo = f.comboT > 0 ? f.combo % 3 + 1 : 1; f.comboT = 0.7; f.atk = f.combo === 3 ? 0.38 : 0.28; f.hitDone = false; beep("swing"); }
+    } else if (!f.stun && f.atk <= 0) f.vx *= 0.8;
+    if (f.atk > 0){
+      f.atk -= dt; if (f.on) f.vx *= 0.85;
+      const total = f.combo === 3 ? 0.38 : 0.28;
+      if (!f.hitDone && f.atk < total - 0.09){
+        f.hitDone = true;
+        const reach = CHARS[f.ch].reach, fx = f.x + f.face*(28 + reach/2);
+        if (Math.abs(fx - o.x) < reach/2 + 26 && Math.abs((f.y - 60) - (o.y - 60)) < 90) dmgTo(S, f, o, f.combo === 3 ? 10 : 5, f.combo === 3 ? 520 : 160);
+      }
+    }
+    if (f.hp > 0 && !f.atk && !f.q) f.face = o.x >= f.x ? 1 : -1;
+    // orbes
+    for (const ob of S.orbs) if (!ob.got && f.hp > 0 && f.slots.length < 2 && Math.abs(ob.x - f.x) < 42 && Math.abs(ob.y - (f.y-55)) < 70){ ob.got = true; f.slots.push(ob.kind); beep("orb"); S.fx.push({k:"num", x:f.x, y:f.y-140, t:1, s:POW[ob.kind].name, c:POW[ob.kind].col}); }
+  }
+  S.orbs = S.orbs.filter(o => !o.got && (o.life -= dt) > 0);
+  S.orbT -= dt; if (S.orbT <= 0 && S.orbs.length < 2){ S.orbT = rnd(4.5, 7.5); S.orbs.push({x:rnd(110, W-110), y:-20, vy:0, kind:pk(POW_IDS), life:14}); }
+  for (const ob of S.orbs){ ob.vy = Math.min(380, ob.vy + 600*dt); ob.y = Math.min(GROUND - 26, ob.y + ob.vy*dt); }
+  for (const p of S.proj){
+    p.x += p.vx*dt; p.t -= dt; const o = S.f[1-p.owner];
+    if (Math.abs(p.x - o.x) < 40 && Math.abs(p.y - (o.y-60)) < 70){ p.t = 0; dmgTo(S, S.f[p.owner], o, p.dmg, 600); S.fx.push({k:"ring", x:p.x, y:p.y, t:0.5, c:p.col}); }
+    if (p.x < -60 || p.x > W+60) p.t = 0;
+  }
+  S.proj = S.proj.filter(p => p.t > 0);
+  physics(S, dt, true);
+  // fin de manche
+  const dead = S.f.filter(f => f.hp <= 0);
+  if (dead.length || S.time <= 0){
+    let w;
+    if (dead.length === 2) w = -1; else if (dead.length === 1) w = 1 - dead[0].side;
+    else { const a = S.f[0].hp/S.f[0].max, b = S.f[1].hp/S.f[1].max; w = Math.abs(a-b) < 0.01 ? -1 : (a > b ? 0 : 1); }
+    if (w >= 0) S.f[w].wins++;
+    S.msg = w < 0 ? "Égalité !" : (dead.length ? "K.-O. ! " : "Temps ! ") + CHARS[S.f[w].ch].name + " gagne la manche";
+    S.lastW = w; S.phase = "roundEnd"; S.pt = 2.8; beep("ko");
+    S.f.forEach(f => { if (f.q){ f.q = null; } });
+  }
+  clearEdges(S);
+}
+function physics(S, dt, live){
+  for (const f of S.f){
+    f.vy += 2200*dt; f.x += f.vx*dt; f.y += f.vy*dt;
+    if (f.y >= GROUND){ f.y = GROUND; f.vy = 0; f.on = true; } else f.on = false;
+    f.x = clamp(f.x, 40, W-40);
+    if (!live) f.vx *= 0.85;
+  }
+  const [a, b] = S.f;
+  if (Math.abs(a.x - b.x) < 50 && Math.abs(a.y - b.y) < 100){ const push = (50 - Math.abs(a.x - b.x))/2, s = a.x < b.x ? -1 : 1; a.x = clamp(a.x + s*push, 40, W-40); b.x = clamp(b.x - s*push, 40, W-40); }
+}
+function clearEdges(S){ S.inp.forEach(I => { I.eu = I.ea = I.ep = false; }); }
+
+// ---------- Ordinateur ----------
+function cpuThink(S, side, dt){
+  const f = S.f[side], o = S.f[1-side], I = S.inp[side];
+  S.ai = S.ai || {}; const A = S.ai[side] || (S.ai[side] = {t:0, cool:0, qDelay:0, mv:0});
+  A.t -= dt; A.cool -= dt;
+  I.l = I.r = I.d = false;
+  if (S.phase !== "fight" || f.hp <= 0) return;
+  if (f.q){ const AD = DIFF[S.diff || 2].ai; if (!A.qDelay) A.qDelay = rnd(AD.think[0], AD.think[1]); A.qDelay -= dt; if (A.qDelay <= 0){ A.qDelay = 0; I.ans = Math.random() < AD.ok ? f.q.a : (f.q.a + 1 + Math.floor(Math.random()*3)) % 4; } return; }
+  const dist = Math.abs(o.x - f.x), reach = CHARS[f.ch].reach + 40;
+  const orb = S.orbs.find(ob => f.slots.length < 2 && ob.y > GROUND - 60);
+  let goal = o.x;
+  if (orb && Math.abs(orb.x - f.x) < Math.abs(o.x - f.x) + 120) goal = orb.x;
+  if (f.slots.length && A.cool <= 0 && Math.random() < (dist > 260 ? 0.03 : 0.008)){ I.ep = true; A.cool = 1; return; }
+  if (o.atk > 0 && dist < reach + 30 && Math.random() < DIFF[S.diff || 2].ai.block){ I.d = true; return; }
+  if (S.proj.some(p => p.owner !== side && Math.abs(p.x - f.x) < 200) && f.on && Math.random() < 0.3) I.eu = true;
+  if (goal === o.x && dist < reach){ if (A.cool <= 0){ I.ea = true; A.cool = rnd(DIFF[S.diff || 2].ai.cool[0], DIFF[S.diff || 2].ai.cool[1]); } }
+  else if (Math.abs(goal - f.x) > 20){ if (goal > f.x) I.r = true; else I.l = true; }
+  if (Math.random() < 0.004 && f.on) I.eu = true;
+}
+// ================= DESSIN =================
+let T = 0;
+function bodyPath(x, ch, top, bot, c){
+  c.beginPath();
+  if (ch === "becher"){ c.moveTo(x-28, top); c.lineTo(x+24, top); c.lineTo(x+32, top-6); c.lineTo(x+28, top+4); c.lineTo(x+28, bot-6); c.quadraticCurveTo(x+28, bot, x+22, bot); c.lineTo(x-22, bot); c.quadraticCurveTo(x-28, bot, x-28, bot-6); c.closePath(); }
+  else if (ch === "pipette"){ c.rect(x-7, top-30, 14, bot-top+30); c.moveTo(x+22, top+26); c.arc(x, top+26, 22, 0, Math.PI*2); }
+  else if (ch === "erlen"){ c.moveTo(x-10, top-14); c.lineTo(x+10, top-14); c.lineTo(x+10, top+14); c.lineTo(x+34, bot-4); c.quadraticCurveTo(x+34, bot, x+28, bot); c.lineTo(x-28, bot); c.quadraticCurveTo(x-34, bot, x-34, bot-4); c.lineTo(x-10, top+14); c.closePath(); }
+  else { c.moveTo(x-11, top-36); c.lineTo(x+11, top-36); c.lineTo(x+11, bot-8); c.lineTo(x+3, bot); c.lineTo(x-3, bot); c.lineTo(x-11, bot-8); c.closePath(); }
+}
+function drawFighter(f, c, ox, oy, s, preview){
+  c = c || g; s = s || 1;
+  const C = CHARS[f.ch], x = (ox != null ? ox : f.x), y = (oy != null ? oy : f.y);
+  c.save(); c.translate(x, y); c.scale(s, s); c.translate(-x, -y);
+  const top = y - 104, bot = y - 34, face = f.face, stunJ = f.stun > 0 ? Math.sin(T*60)*3 : 0;
+  // ombre
+  if (!preview){ c.fillStyle = "#00000055"; c.beginPath(); c.ellipse(x, GROUND + 4, 34, 8, 0, 0, 7); c.fill(); }
+  // jambes
+  const wk = Math.sin(f.walk*14) * (Math.abs(f.vx) > 10 && f.on ? 12 : 0);
+  c.strokeStyle = "#e8eef2"; c.lineWidth = 6; c.lineCap = "round";
+  c.beginPath(); c.moveTo(x-10, bot); c.lineTo(x-14 + wk, y-4); c.moveTo(x+10, bot); c.lineTo(x+14 - wk, y-4); c.stroke();
+  c.fillStyle = "#2d3561"; c.fillRect(x-24 + wk, y-6, 18, 8); c.fillRect(x+6 - wk, y-6, 18, 8);
+  // corps de verre + liquide (niveau = vie)
+  const bx = x + stunJ;
+  bodyPath(bx, f.ch, top, bot, c); c.fillStyle = "#dff1f8cc"; c.fill();
+  c.save(); bodyPath(bx, f.ch, top, bot, c); c.clip();
+  const lvl = bot - (bot - (top - 30)) * (f.hp / f.max) * 0.92;
+  c.fillStyle = C.col; c.fillRect(bx-40, lvl + Math.sin(T*4 + x)*2, 80, bot - lvl + 4);
+  c.fillStyle = "#ffffff55"; c.fillRect(bx-40, lvl + Math.sin(T*4 + x)*2, 80, 3);
+  if (f.strong > 0){ for (let i=0;i<4;i++){ const by = bot - ((T*60 + i*17) % 60); c.fillStyle = "#ffffffaa"; c.beginPath(); c.arc(bx - 12 + i*8, by, 3, 0, 7); c.fill(); } }
+  c.restore();
+  bodyPath(bx, f.ch, top, bot, c); c.strokeStyle = "#ffffff"; c.lineWidth = 3; c.stroke();
+  if (f.ch === "burette"){ c.fillStyle = "#2d3561"; c.fillRect(bx-16, bot-14, 32, 6); for (let i=0;i<6;i++){ c.fillStyle = "#ffffff99"; c.fillRect(bx-11, top - 28 + i*14, 7, 2); } }
+  // yeux
+  const ey = f.ch === "pipette" ? top + 18 : f.ch === "erlen" ? top + 28 : f.ch === "burette" ? top - 10 : top + 22, ex = bx + face*4;
+  c.fillStyle = "#fff"; c.fillRect(ex-12, ey-6, 9, 10); c.fillRect(ex+3, ey-6, 9, 10);
+  c.fillStyle = "#1a1424"; c.fillRect(ex-9 + face*2, ey-3, 4, 6); c.fillRect(ex+6 + face*2, ey-3, 4, 6);
+  if (f.stun > 0 || f.hp <= 0){ c.strokeStyle = "#1a1424"; c.lineWidth = 2; c.beginPath(); c.moveTo(ex-12, ey-6); c.lineTo(ex-3, ey+4); c.moveTo(ex-3, ey-6); c.lineTo(ex-12, ey+4); c.moveTo(ex+3, ey-6); c.lineTo(ex+12, ey+4); c.moveTo(ex+12, ey-6); c.lineTo(ex+3, ey+4); c.stroke(); }
+  else { c.fillStyle = "#1a1424"; c.fillRect(ex-13, ey-10, 10, 3); c.fillRect(ex+3, ey-10, 10, 3); }
+  // bras
+  const sy = y - 72, reach = C.reach;
+  c.strokeStyle = "#e8eef2"; c.lineWidth = 6;
+  const tot = f.combo === 3 ? 0.38 : 0.28, pr = f.atk > 0 ? Math.sin(Math.PI * (1 - f.atk/tot)) : 0;
+  const hand = (side, ext) => { const hx = bx + side*22 + face*ext, hy = sy + 6 - (f.combo === 3 && f.atk > 0 && side === face ? 10 : 0); c.beginPath(); c.moveTo(bx + side*24, sy); c.lineTo(hx, hy); c.stroke(); c.fillStyle = "#ffffff"; c.beginPath(); c.arc(hx, hy, 9, 0, 7); c.fill(); c.strokeStyle = "#9fb4c0"; c.lineWidth = 2; c.stroke(); c.strokeStyle = "#e8eef2"; c.lineWidth = 6; };
+  if (f.block){ hand(1, 18); hand(-1, 26); c.strokeStyle = "#bfe3ff"; c.lineWidth = 3; c.beginPath(); c.arc(bx + face*30, sy - 4, 34, -1.1, 1.1); c.stroke(); }
+  else if (f.q){ hand(1, -4); hand(-1, -4); }
+  else { hand(face, 10 + pr*reach); hand(-face, 4 + Math.sin(T*3)*2); }
+  // effets d'état
+  if (f.shield > 0){ c.strokeStyle = "#9fd4f5"; c.globalAlpha = 0.6 + Math.sin(T*8)*0.2; c.lineWidth = 4; c.beginPath(); c.ellipse(bx, y-62, 52, 78, 0, 0, 7); c.stroke(); c.globalAlpha = 1; }
+  if (f.root > 0){ c.fillStyle = "#e8eef2cc"; for (let i=0;i<7;i++){ const cx2 = x - 36 + i*12; c.beginPath(); c.moveTo(cx2-8, y); c.lineTo(cx2, y - 28 - (i%2)*14); c.lineTo(cx2+8, y); c.fill(); } }
+  if (f.weak > 0){ c.fillStyle = "#5b8cff"; for (let i=0;i<3;i++){ c.beginPath(); c.arc(x - 20 + i*20, y - 140 - Math.sin(T*4+i)*4, 5, 0, 7); c.fill(); } }
+  if (f.q){ c.fillStyle = POW[f.q.kind].col; c.globalAlpha = 0.25 + Math.sin(T*6)*0.1; c.beginPath(); c.arc(bx, y-60, 70, 0, 7); c.fill(); c.globalAlpha = 1; c.fillStyle = "#fff"; c.font = `700 30px "Pixelify Sans", monospace`; c.textAlign = "center"; c.fillText("?", bx, top - 44); }
+  c.restore();
+}
+function drawArena(){
+  const gr = g.createLinearGradient(0,0,0,H); gr.addColorStop(0,"#1c2b4a"); gr.addColorStop(1,"#2c3f66"); g.fillStyle = gr; g.fillRect(0,0,W,H);
+  g.fillStyle = "#24365a"; for (let x=0;x<W;x+=48) g.fillRect(x,0,2,GROUND); for (let y=0;y<GROUND;y+=48) g.fillRect(0,y,W,2);
+  // affiches
+  const poster = (x, y, w, t1, t2) => { g.fillStyle = "#f4efe0"; g.fillRect(x, y, w, 64); g.fillStyle = "#1c2b4a"; g.font = `700 17px "Atkinson Hyperlegible", sans-serif`; g.textAlign = "center"; g.fillText(t1, x + w/2, y + 28); g.font = `400 13px "Atkinson Hyperlegible", sans-serif`; g.fillText(t2, x + w/2, y + 48); g.fillStyle = "#ff5d6c"; g.fillRect(x + w/2 - 4, y - 6, 8, 8); };
+  poster(60, 230, 190, "C = m ÷ V", "m = C × V   ·   V = m ÷ C");
+  poster(385, 250, 190, "1 ppm = 1 mg/L", "dans l'eau · 1 mg/kg (solide)");
+  poster(710, 230, 190, "1 g/L = 1000 ppm", "1 % = 10 000 ppm");
+  // étagère
+  g.fillStyle = "#5b3b22"; g.fillRect(0, 350, W, 8);
+  const cols = ["#5ee6c8","#ffc93c","#b48cff","#ff7a59","#5ee6a0"];
+  for (let i=0;i<16;i++){ const x = 20 + i*60; g.fillStyle = "#cfe7f5"; g.fillRect(x, 318, 18, 32); g.fillStyle = cols[i%5]; g.fillRect(x+2, 332, 14, 18); }
+  // sol
+  g.fillStyle = "#3d2a1a"; g.fillRect(0, GROUND, W, H-GROUND); g.fillStyle = "#5b3b22"; g.fillRect(0, GROUND, W, 10); g.fillStyle = "#00000033"; for (let x=0;x<W;x+=80) g.fillRect(x, GROUND+10, 2, H);
+}
+function bar(x, y, w, f, right){
+  const C = CHARS[f.ch], r = f.hp/f.max;
+  g.fillStyle = "#000a"; g.fillRect(x-3, y-3, w+6, 26);
+  g.fillStyle = "#3a1220"; g.fillRect(x, y, w, 20);
+  g.fillStyle = r > 0.5 ? C.col : r > 0.25 ? "#ffc93c" : "#ff5d6c";
+  if (right) g.fillRect(x + w*(1-r), y, w*r, 20); else g.fillRect(x, y, w*r, 20);
+  if (f.shield > 0){ g.fillStyle = "#9fd4f5aa"; const sw = w*Math.min(1, f.shield/f.max); if (right) g.fillRect(x + w*(1-r) - sw, y, sw, 20); else g.fillRect(x + w*r, y, sw, 20); }
+  g.fillStyle = "#fff"; g.font = `700 16px "Pixelify Sans", monospace`; g.textAlign = right ? "right" : "left"; g.fillText(C.name, right ? x + w : x, y + 40);
+  for (let i=0;i<2;i++){ const wx = right ? x + w - 110 - i*18 : x + 100 + i*18; g.fillStyle = i < f.wins ? "#ffc93c" : "#ffffff33"; g.beginPath(); g.arc(wx, y + 35, 6, 0, 7); g.fill(); }
+  // emplacements de pouvoir
+  for (let i=0;i<2;i++){ const sx = right ? x + w - 46 - i*50 : x + i*50, k = f.slots[i]; g.fillStyle = k ? POW[k].col : "#ffffff18"; g.fillRect(sx, y + 48, 44, 22); g.fillStyle = k ? "#1a1424" : "#ffffff55"; g.font = `700 12px "Atkinson Hyperlegible", sans-serif`; g.textAlign = "center"; g.fillText(k ? POW[k].short : "—", sx + 22, y + 63); }
+  const eff = []; if (f.strong > 0) eff.push(["SAT ×2", "#ffc93c"]); if (f.weak > 0) eff.push(["DILUÉ ½", "#5b8cff"]); if (f.root > 0) eff.push(["PRÉCIPITÉ", "#e8eef2"]);
+  eff.forEach((e,i) => { g.fillStyle = e[1]; g.font = `700 12px "Atkinson Hyperlegible", sans-serif`; g.textAlign = right ? "right" : "left"; g.fillText(e[0], right ? x + w - 110 - i*80 : x + 110 + i*80, y + 63); });
+}
+// boîtes de question : renvoie les zones cliquables
+let HITBOX = [];
+function wrapLines(t, maxW){ const out = []; let line = ""; for (const w of t.split(" ")){ const s = line ? line + " " + w : w; if (g.measureText(s).width > maxW && line){ out.push(line); line = w; } else line = s; } if (line) out.push(line); return out; }
+function qBox(f, mine, keys){
+  const x0 = f.side === 0 ? 10 : W/2 + 5, w = W/2 - 15, y0 = 112;
+  const C = CHARS[f.ch];
+  if (f.q && !mine){ g.fillStyle = "#000b"; g.fillRect(x0 + w/2 - 120, y0, 240, 34); g.fillStyle = "#fff"; g.font = `700 15px "Atkinson Hyperlegible", sans-serif`; g.textAlign = "center"; g.fillText(`${C.name} réfléchit…`, x0 + w/2, y0 + 23); return; }
+  if (f.fb && mine){
+    g.font = `400 13px "Atkinson Hyperlegible", sans-serif`; const el = wrapLines(f.fb.e, w - 24);
+    const hh = 46 + el.length*17; g.fillStyle = "#0d0b18ee"; g.fillRect(x0, y0, w, hh); g.fillStyle = f.fb.ok ? "#5ee6a0" : "#ff5d6c"; g.fillRect(x0, y0, 5, hh);
+    g.font = `700 15px "Atkinson Hyperlegible", sans-serif`; g.textAlign = "left"; g.fillText(f.fb.h, x0 + 14, y0 + 22);
+    g.fillStyle = "#e8eef2"; g.font = `400 13px "Atkinson Hyperlegible", sans-serif`; el.forEach((l,i) => g.fillText(l, x0 + 14, y0 + 42 + i*17)); return;
+  }
+  if (!f.q || !mine) return;
+  const q = f.q, P = POW[q.kind];
+  g.font = `700 15px "Atkinson Hyperlegible", sans-serif`; const ql = wrapLines(q.q, w - 24);
+  const hh = 40 + ql.length*19 + 2*40 + 18;
+  g.fillStyle = "#0d0b18f2"; g.fillRect(x0, y0, w, hh); g.strokeStyle = P.col; g.lineWidth = 3; g.strokeRect(x0, y0, w, hh);
+  g.fillStyle = P.col; g.font = `700 13px "Pixelify Sans", monospace`; g.textAlign = "left"; g.fillText(`${P.name.toUpperCase()} · réponds pour l'activer`, x0 + 12, y0 + 20);
+  g.fillStyle = "#ffffff22"; g.fillRect(x0 + 12, y0 + 27, w - 24, 5); g.fillStyle = q.t < 3 ? "#ff5d6c" : P.col; g.fillRect(x0 + 12, y0 + 27, (w - 24) * Math.max(0, q.t/q.max), 5);
+  g.fillStyle = "#fff"; g.font = `700 15px "Atkinson Hyperlegible", sans-serif`; ql.forEach((l,i) => g.fillText(l, x0 + 12, y0 + 52 + i*19));
+  const oy = y0 + 40 + ql.length*19, bw = (w - 32)/2;
+  q.o.forEach((o, i) => { const bx = x0 + 12 + (i%2)*(bw + 8), by = oy + Math.floor(i/2)*40, k = keys[i];
+    g.fillStyle = "#262140"; g.fillRect(bx, by, bw, 34); g.strokeStyle = "#3d3663"; g.lineWidth = 2; g.strokeRect(bx, by, bw, 34);
+    g.fillStyle = "#ffc93c"; g.font = `700 15px "Pixelify Sans", monospace`; g.fillText(k, bx + 8, by + 23);
+    g.fillStyle = "#f4efe0"; g.font = `700 14px "Atkinson Hyperlegible", sans-serif`; g.fillText(o, bx + 30, by + 23);
+    HITBOX.push({x:bx, y:by, w:bw, h:34, side:f.side, i}); });
+}
+function render(S, view){
+  // view : {mine:[bool,bool], keys:[[..],[..]]}
+  HITBOX = [];
+  drawArena();
+  for (const ob of S.orbs){ const P = POW[ob.kind], bob = Math.sin(T*4 + ob.x)*4; g.fillStyle = P.col; g.globalAlpha = 0.35; g.beginPath(); g.arc(ob.x, ob.y + bob, 26, 0, 7); g.fill(); g.globalAlpha = 1; g.beginPath(); g.arc(ob.x, ob.y + bob, 16, 0, 7); g.fill(); g.fillStyle = "#1a1424"; g.font = `700 11px "Atkinson Hyperlegible", sans-serif`; g.textAlign = "center"; g.fillText(P.short, ob.x, ob.y + bob + 4); if (ob.life < 3 && Math.floor(T*8)%2){ g.strokeStyle = "#fff"; g.lineWidth = 2; g.stroke(); } }
+  for (const p of S.proj){ g.fillStyle = p.col; g.globalAlpha = 0.3; for (let i=1;i<5;i++){ g.beginPath(); g.arc(p.x - Math.sign(p.vx)*i*14, p.y, 20 - i*3, 0, 7); g.fill(); } g.globalAlpha = 1; g.beginPath(); g.arc(p.x, p.y, 22, 0, 7); g.fill(); g.fillStyle = "#ffffffaa"; g.beginPath(); g.arc(p.x - 6, p.y - 7, 6, 0, 7); g.fill(); }
+  S.f.slice().sort((a,b) => a.atk - b.atk).forEach(f => drawFighter(f));
+  for (const e of S.fx){
+    if (e.k === "hit"){ g.fillStyle = "#fff"; g.globalAlpha = e.t/0.3; for (let i=0;i<8;i++){ const a = i/8*Math.PI*2; g.beginPath(); g.moveTo(e.x, e.y); g.lineTo(e.x + Math.cos(a)*30*(1.3-e.t), e.y + Math.sin(a)*30*(1.3-e.t)); g.lineTo(e.x + Math.cos(a+0.2)*12, e.y + Math.sin(a+0.2)*12); g.fill(); } g.globalAlpha = 1; }
+    else if (e.k === "block"){ g.strokeStyle = "#bfe3ff"; g.lineWidth = 4; g.globalAlpha = e.t/0.25; g.beginPath(); g.arc(e.x, e.y, 24*(1.4 - e.t), 0, 7); g.stroke(); g.globalAlpha = 1; }
+    else if (e.k === "ring"){ g.strokeStyle = e.c; g.lineWidth = 5; g.globalAlpha = e.t/0.6; g.beginPath(); g.arc(e.x, e.y, 90*(1 - e.t/0.6) + 10, 0, 7); g.stroke(); g.globalAlpha = 1; }
+    else if (e.k === "num"){ g.fillStyle = e.c || "#ffc93c"; g.font = `700 ${e.c ? 16 : 22}px "Pixelify Sans", monospace`; g.textAlign = "center"; g.fillText(e.s, e.x, e.y - (1 - e.t)*30); }
+  }
+  bar(20, 16, 380, S.f[0], false); bar(W - 400, 16, 380, S.f[1], true);
+  g.fillStyle = "#000a"; g.fillRect(W/2 - 40, 10, 80, 44); g.fillRect(W/2 - 62, 56, 124, 18); g.fillStyle = S.time < 10 ? "#ff5d6c" : "#fff"; g.font = `700 30px "Pixelify Sans", monospace`; g.textAlign = "center"; g.fillText(Math.max(0, Math.ceil(S.time)), W/2, 43);
+  g.font = `700 12px "Atkinson Hyperlegible", sans-serif`; g.fillStyle = "#ffffffaa"; g.fillText(`Manche ${S.round} · ${DIFF[S.diff || 2].name}`, W/2, 68);
+  S.f.forEach(f => qBox(f, view.mine[f.side], view.keys[f.side]));
+  if (S.phase === "intro" || S.phase === "roundEnd"){
+    const t = S.phase === "intro" ? (S.pt > 0.9 ? `Manche ${S.round}` : "Combattez !") : S.msg;
+    g.fillStyle = "#000a"; g.fillRect(0, H/2 - 50, W, 90); g.fillStyle = S.phase === "intro" && S.pt <= 0.9 ? "#ffc93c" : "#fff"; g.font = `700 44px "Pixelify Sans", monospace`; g.textAlign = "center"; g.fillText(t, W/2, H/2 + 12);
+  }
+}
+// ================= APPLICATION : modes, contrôles, réseau =================
+const APP = {diff:2, mode:null, S:null, me:0, picks:[null,null], turn:0, peer:null, conn:null, sndq:[], ended:false, lastSnap:0, myChar:null};
+const _beep = beep;
+beep = function(k){ _beep(k); if (APP.mode === "host") APP.sndq.push(k); };
+
+const SCREENS = ["sMenu","sHow","sSelect","sOnline","sEnd"];
+function show(id){ SCREENS.forEach(s => $(s).hidden = s !== id); }
+function hideAll(){ SCREENS.forEach(s => $(s).hidden = true); }
+
+// ---------- Choix des personnages ----------
+function charPreview(cvs, id){
+  const c = cvs.getContext("2d"); c.clearRect(0,0,cvs.width,cvs.height);
+  const f = newFighter(id, 0); f.face = 1;
+  drawFighter(f, c, 70, 128, 0.85, true);
+}
+function buildChars(){
+  const box = $("chars"); box.innerHTML = "";
+  CHAR_IDS.forEach(id => {
+    const C = CHARS[id], b = document.createElement("button"); b.type = "button"; b.className = "char"; b.dataset.id = id;
+    b.innerHTML = `<canvas width="140" height="140"></canvas><b style="color:${C.col}">${C.name}</b><span>${C.txt}<br>Vie ${C.hp} · Vitesse ${C.spd}</span>`;
+    charPreview(b.querySelector("canvas"), id);
+    b.addEventListener("click", () => pickChar(id));
+    box.appendChild(b);
+  });
+}
+function refreshSelect(){
+  document.querySelectorAll(".char").forEach(b => { b.classList.toggle("p1", APP.picks[0] === b.dataset.id); b.classList.toggle("p2", APP.picks[1] === b.dataset.id); });
+  const m = APP.mode;
+  if (m === "local"){ $("selTitle").innerHTML = APP.turn === 0 ? `<em style="color:var(--p1)">Joueur 1</em>, choisis ton personnage` : `<em style="color:var(--p2)">Joueur 2</em>, choisis ton personnage`; $("selGo").disabled = !(APP.picks[0] && APP.picks[1]); $("selGo").textContent = "Combattre !"; }
+  else if (m === "cpu"){ $("selTitle").textContent = "Choisis ton personnage"; $("selGo").disabled = !APP.picks[0]; $("selGo").textContent = "Combattre !"; }
+  else { $("selTitle").textContent = "Choisis ton personnage"; $("selGo").disabled = !APP.picks[0]; $("selGo").textContent = "Continuer ▸"; }
+  $("selHint").textContent = APP.picks[0] ? `Joueur 1 : ${CHARS[APP.picks[0]].name}` + (APP.picks[1] ? ` · Joueur 2 : ${CHARS[APP.picks[1]].name}` : "") : "Touche un personnage.";
+}
+function pickChar(id){ beep("orb"); if (APP.mode === "local"){ APP.picks[APP.turn] = id; APP.turn = APP.turn === 0 ? 1 : 0; } else APP.picks[0] = id; refreshSelect(); }
+function openSelect(mode){ APP.mode = mode; APP.picks = [null,null]; APP.turn = 0; buildChars(); buildDiff(); refreshSelect(); show("sSelect"); }
+try { const v = +localStorage.getItem("duel-niveau"); if (v >= 1 && v <= 3) APP.diff = v; } catch(e){}
+function buildDiff(){
+  const box = $("diffs"); box.innerHTML = "";
+  [1,2,3].forEach(n => { const D = DIFF[n], b = document.createElement("button"); b.type = "button"; b.className = "lvl" + (APP.diff === n ? " on" : ""); b.setAttribute("aria-pressed", APP.diff === n);
+    b.innerHTML = `<b>${D.name}</b><span>${D.d}</span>`; b.addEventListener("click", () => { APP.diff = n; try { localStorage.setItem("duel-niveau", n); } catch(e){} beep("orb"); buildDiff(); }); box.appendChild(b); });
+  $("diffNote").textContent = APP.mode === "online" ? "En ligne, c'est le niveau choisi par la personne qui crée la partie qui s'applique aux deux joueurs." : APP.mode === "cpu" ? "Le niveau change aussi l'habileté de l'ordinateur." : "";
+}
+
+// ---------- Démarrage d'un combat ----------
+function startMatch(c1, c2){
+  APP.S = newMatch(c1, c2, APP.diff); APP.ended = false; APP.S.ai = null; hideAll(); setupPads();
+}
+$("selGo").addEventListener("click", () => {
+  if (APP.mode === "cpu"){ const others = CHAR_IDS.filter(c => c !== APP.picks[0]); APP.picks[1] = pk(others); APP.me = 0; startMatch(APP.picks[0], APP.picks[1]); }
+  else if (APP.mode === "local"){ APP.me = 0; startMatch(APP.picks[0], APP.picks[1]); }
+  else { APP.myChar = APP.picks[0]; openOnline(); }
+});
+$("selBack").addEventListener("click", () => show("sMenu"));
+$("mCpu").addEventListener("click", () => openSelect("cpu"));
+$("mLocal").addEventListener("click", () => openSelect("local"));
+$("mOnline").addEventListener("click", () => openSelect("online"));
+$("mHow").addEventListener("click", () => show("sHow"));
+$("howBack").addEventListener("click", () => show("sMenu"));
+const syncSound = () => $("mSound").textContent = "Son : " + (SOUND ? "activé" : "coupé");
+$("mSound").addEventListener("click", () => { SOUND = !SOUND; try { localStorage.setItem("duel-son", SOUND ? "1" : "0"); } catch(e){} syncSound(); beep("orb"); });
+syncSound();
+
+// ---------- Contrôles ----------
+const K1 = {KeyA:"l", KeyD:"r", KeyW:"u", KeyS:"d", KeyF:"a", KeyG:"p"}, K2 = {ArrowLeft:"l", ArrowRight:"r", ArrowUp:"u", ArrowDown:"d", KeyK:"a", KeyL:"p"};
+const A1 = {Digit1:0, Digit2:1, Digit3:2, Digit4:3, Numpad1:0, Numpad2:1, Numpad3:2, Numpad4:3}, A2 = {Digit7:0, Digit8:1, Digit9:2, Digit0:3, Numpad7:0, Numpad8:1, Numpad9:2, Numpad0:3};
+const fighting = () => APP.S && !APP.ended && $("sMenu").hidden && $("sSelect").hidden && $("sOnline").hidden && $("sEnd").hidden && $("sHow").hidden;
+function humanFor(set){ return APP.mode === "local" ? set : APP.me; }
+function setKey(p, k, down){
+  if (APP.mode === "guest"){ if (APP.gk[k] === down) return; APP.gk[k] = down; netSend({t:"i", k, v:down}); return; }
+  const I = APP.S.inp[p]; if (down && !I[k]){ if (k === "u") I.eu = true; if (k === "a") I.ea = true; if (k === "p") I.ep = true; } I[k] = down;
+}
+function setAns(p, i){
+  if (APP.mode === "guest"){ netSend({t:"a", i}); return; }
+  if (APP.S.f[p].q) APP.S.inp[p].ans = i;
+}
+addEventListener("keydown", e => {
+  if (e.code === "Escape"){ toMenu(); return; }
+  if (!fighting()) return;
+  let set = K1[e.code] ? 0 : K2[e.code] ? 1 : -1;
+  if (set >= 0){ e.preventDefault(); if (!e.repeat) setKey(humanFor(set), (set === 0 ? K1 : K2)[e.code], true); return; }
+  const a = A1[e.code] != null ? [0, A1[e.code]] : A2[e.code] != null ? [1, A2[e.code]] : null;
+  if (a){ e.preventDefault(); setAns(humanFor(a[0]), a[1]); }
+});
+addEventListener("keyup", e => {
+  if (!APP.S) return;
+  const set = K1[e.code] ? 0 : K2[e.code] ? 1 : -1;
+  if (set >= 0) setKey(humanFor(set), (set === 0 ? K1 : K2)[e.code], false);
+});
+function setupPads(){
+  const two = APP.mode === "local";
+  document.querySelector('.pad[data-pad="1"]').hidden = !two;
+  document.querySelector('.pad[data-pad="0"]').className = "pad " + (APP.me === 1 && !two ? "p2" : "p1");
+}
+document.querySelectorAll(".pad button").forEach(b => {
+  const padIdx = +b.parentElement.dataset.pad, k = b.dataset.k;
+  const who = () => APP.mode === "local" ? padIdx : APP.me;
+  const on = e => { e.preventDefault(); if (!fighting()) return; b.classList.add("on"); setKey(who(), k, true); };
+  const off = e => { e.preventDefault(); b.classList.remove("on"); if (APP.S) setKey(who(), k, false); };
+  b.addEventListener("pointerdown", on); ["pointerup","pointerleave","pointercancel"].forEach(ev => b.addEventListener(ev, off));
+});
+cv.addEventListener("pointerdown", e => {
+  if (!fighting()) return;
+  const r = cv.getBoundingClientRect(), x = (e.clientX - r.left)*W/r.width, y = (e.clientY - r.top)*H/r.height;
+  const h = HITBOX.find(b => x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h);
+  if (h && (APP.mode === "local" || h.side === APP.me)) setAns(h.side, h.i);
+});
+document.querySelectorAll(".pad .a").forEach(b => b.textContent = "COUP");
+document.querySelectorAll(".pad .p").forEach(b => b.textContent = "POUV");
+document.querySelectorAll('.pad [data-k="d"]').forEach(b => b.textContent = "BLOC");
+
+// ---------- Fin de match ----------
+function showEnd(){
+  APP.ended = true; const S = APP.S, w = S.winner;
+  const nm = i => CHARS[S.f[i].ch].name;
+  let title;
+  if (APP.mode === "local") title = `<em>Joueur ${w+1}</em> gagne avec ${nm(w)} !`;
+  else if (APP.mode === "cpu") title = w === 0 ? "<em>Victoire !</em>" : "L'ordinateur gagne…";
+  else title = w === APP.me ? "<em>Tu as gagné !</em>" : "Tu as perdu…";
+  $("endTitle").innerHTML = title;
+  const lab = i => APP.mode === "local" ? `Joueur ${i+1}` : APP.mode === "cpu" ? (i === 0 ? "Toi" : "Ordinateur") : (i === APP.me ? "Toi" : "Adversaire");
+  $("endScore").innerHTML = S.f.map((f,i) => `<div style="--c:${CHARS[f.ch].col}"><b>${lab(i)} · ${nm(i)}</b><br>Pouvoirs activés : ${f.st.right} · perdus : ${f.st.wrong}</div>`).join("");
+  const mine = APP.mode === "local" ? [0,1] : [APP.me];
+  const miss = mine.flatMap(i => S.f[i].st.miss.map(m => ({...m, who: APP.mode === "local" ? `Joueur ${i+1} · ` : ""})));
+  $("endMiss").innerHTML = miss.length ? `<p><b>À revoir</b></p>` + miss.slice(0, 5).map(m => `<div>${m.who}${m.q}<br><b>Réponse : ${m.a}</b> — ${m.e}</div>`).join("") : `<p>Aucun pouvoir perdu. Bravo !</p>`;
+  $("endAgain").hidden = false; $("endStatus").textContent = "";
+  if (APP.mode === "guest"){ $("endAgain").textContent = "Demander une revanche"; } else $("endAgain").textContent = "Revanche";
+  show("sEnd"); beep("ko");
+}
+$("endAgain").addEventListener("click", () => {
+  if (APP.mode === "guest"){ netSend({t:"rematch"}); $("endStatus").textContent = "Demande envoyée. La partie recommencera quand ton adversaire l'acceptera."; return; }
+  if (APP.mode === "host"){ hostRestart(); return; }
+  startMatch(APP.S.f[0].ch, APP.S.f[1].ch);
+});
+$("endMenu").addEventListener("click", toMenu);
+function toMenu(){ netClose(); APP.S = null; APP.mode = null; APP.ended = false; show("sMenu"); }
+
+// ---------- Réseau (PeerJS, pair à pair) ----------
+const PeerCls = location.hash === "#bctest" ? FakePeerFactory() : (typeof Peer !== "undefined" ? Peer : null);
+const PREFIX = "duel-st4-conc-";
+function netSend(m){ try { if (APP.conn && APP.conn.open !== false) APP.conn.send(m); } catch(e){} }
+function netClose(){ try { APP.conn && APP.conn.close(); } catch(e){} try { APP.peer && APP.peer.destroy(); } catch(e){} APP.conn = null; APP.peer = null; clearTimeout(APP.to); }
+function status(t){ $("onStatus").textContent = t; }
+function openOnline(){
+  show("sOnline"); $("onChoice").hidden = false; $("onHostBox").hidden = true; $("onJoinBox").hidden = true; status("");
+  if (!PeerCls) status("Le mode en ligne n'est pas disponible : la page doit être ouverte avec une connexion Internet.");
+}
+$("onBack").addEventListener("click", () => { netClose(); show("sMenu"); });
+$("onJoinShow").addEventListener("click", () => { $("onChoice").hidden = true; $("onJoinBox").hidden = false; $("onCodeIn").focus(); });
+$("onCodeIn").addEventListener("keydown", e => { if (e.key === "Enter") $("onJoin").click(); });
+$("onHost").addEventListener("click", () => {
+  if (!PeerCls) return;
+  $("onChoice").hidden = true; $("onHostBox").hidden = false;
+  const tryHost = () => {
+    const code = Array.from({length:4}, () => "ABCDEFGHJKMNPQRSTUVWXYZ"[Math.floor(Math.random()*23)]).join("");
+    status("Création de la partie…");
+    const peer = new PeerCls(PREFIX + code.toLowerCase()); APP.peer = peer;
+    peer.on("open", () => { $("onCode").textContent = code; status("En attente de ton adversaire… Il doit choisir « Rejoindre une partie » et taper ce code."); });
+    peer.on("error", err => { if (err && err.type === "unavailable-id"){ try { peer.destroy(); } catch(e){} tryHost(); } else status("Erreur réseau : " + (err && err.type ? err.type : "inconnue") + ". Vérifie la connexion Internet et réessaie."); });
+    peer.on("connection", conn => {
+      if (APP.conn){ conn.close && conn.close(); return; }
+      APP.conn = conn;
+      conn.on("data", d => onHostData(d));
+      conn.on("close", () => netLost());
+      conn.on("open", () => status("Adversaire connecté !"));
+    });
+  };
+  tryHost();
+});
+$("onJoin").addEventListener("click", () => {
+  if (!PeerCls) return;
+  const code = $("onCodeIn").value.trim().toUpperCase();
+  if (code.length !== 4){ status("Le code contient 4 lettres."); return; }
+  status("Connexion à la partie " + code + "…");
+  const peer = new PeerCls(); APP.peer = peer;
+  peer.on("error", err => status(err && err.type === "peer-unavailable" ? "Aucune partie trouvée avec ce code. Vérifie le code et que la partie est bien créée." : "Erreur réseau : " + (err && err.type ? err.type : "inconnue") + "."));
+  peer.on("open", () => {
+    const conn = peer.connect(PREFIX + code.toLowerCase(), {reliable:true, serialization:"json"}); APP.conn = conn;
+    conn.on("open", () => { status("Connecté ! Le combat commence…"); conn.send({t:"hello", ch:APP.myChar}); });
+    conn.on("data", d => onGuestData(d));
+    conn.on("close", () => netLost());
+  });
+  clearTimeout(APP.to); APP.to = setTimeout(() => { if (APP.mode !== "guest") status("La connexion prend du temps. Le réseau de l'école bloque peut-être les connexions entre appareils : essaie le partage de connexion d'un cellulaire."); }, 12000);
+});
+function netLost(){ if (!APP.mode || (APP.mode !== "host" && APP.mode !== "guest")) return; APP.S = null; const m = APP.mode; APP.mode = null; netClose(); openOnline(); status(m === "host" || m === "guest" ? "La connexion avec l'adversaire a été perdue." : ""); }
+function onHostData(d){
+  if (!d || !d.t) return;
+  if (d.t === "hello"){ APP.mode = "host"; APP.me = 0; APP.guestChar = d.ch; startMatch(APP.myChar, d.ch); netSend({t:"start", diff:APP.diff}); }
+  else if (!APP.S) return;
+  else if (d.t === "i") setKey(1, d.k, d.v);
+  else if (d.t === "a"){ if (APP.S.f[1].q) APP.S.inp[1].ans = d.i; }
+  else if (d.t === "rematch"){ if (APP.ended) hostRestart(); }
+}
+function hostRestart(){ startMatch(APP.myChar, APP.guestChar); netSend({t:"start", diff:APP.diff}); }
+function onGuestData(d){
+  if (!d || !d.t) return;
+  if (d.t === "start"){ APP.mode = "guest"; APP.me = 1; APP.gk = {}; APP.ended = false; APP.S = null; hideAll(); setupPads(); clearTimeout(APP.to); }
+  else if (d.t === "s"){ if (APP.mode !== "guest") return; APP.S = d.s; (d.snd || []).forEach(k => _beep(k)); }
+}
+function snapshot(S){
+  const s = JSON.parse(JSON.stringify({diff:S.diff, f:S.f, orbs:S.orbs, proj:S.proj, fx:S.fx, round:S.round, time:S.time, phase:S.phase, pt:S.pt, msg:S.msg, winner:S.winner}));
+  s.f.forEach(f => { if (f.q){ delete f.q.a; delete f.q.e; } });
+  return s;
+}
+
+// Transport de test (deux onglets d'un même navigateur), activé seulement avec #bctest
+function FakePeerFactory(){
+  const bc = new BroadcastChannel("duel-fakepeer");
+  class Ev { constructor(){ this.h = {}; } on(e, f){ (this.h[e] = this.h[e] || []).push(f); } emit(e, a){ (this.h[e] || []).forEach(f => f(a)); } }
+  class FConn extends Ev { constructor(peer, rid){ super(); this.peer = peer; this.rid = rid; this.open = false; } send(d){ bc.postMessage({to:this.rid, from:this.peer.id, type:"data", data:d}); } close(){ bc.postMessage({to:this.rid, from:this.peer.id, type:"close"}); } }
+  return class FPeer extends Ev {
+    constructor(id){ super(); this.id = id || "g" + Math.random().toString(36).slice(2,8); this.c = {}; bc.addEventListener("message", ev => this.msg(ev.data)); setTimeout(() => this.emit("open", this.id), 30); }
+    connect(rid){ const c = new FConn(this, rid); this.c[rid] = c; bc.postMessage({to:rid, from:this.id, type:"connect"}); return c; }
+    msg(m){ if (m.to !== this.id) return; const c = this.c[m.from];
+      if (m.type === "connect"){ const n = new FConn(this, m.from); this.c[m.from] = n; this.emit("connection", n); setTimeout(() => { n.open = true; n.emit("open"); bc.postMessage({to:m.from, from:this.id, type:"accept"}); }, 20); }
+      else if (m.type === "accept" && c){ c.open = true; c.emit("open"); } else if (m.type === "data" && c) c.emit("data", m.data); else if (m.type === "close" && c) c.emit("close"); }
+    destroy(){}
+  };
+}
+
+// ---------- Boucle ----------
+let last = performance.now(), acc = 0;
+function loop(now){
+  const dt = Math.min(0.1, (now - last)/1000); last = now; T += dt;
+  const S = APP.S;
+  if (S && (APP.mode === "cpu" || APP.mode === "local" || APP.mode === "host")){
+    if (fighting()){
+      acc += dt; let n = 0;
+      while (acc >= 1/60 && n < 6){ acc -= 1/60; n++; if (APP.mode === "cpu") cpuThink(S, 1, 1/60); step(S, 1/60);
+        if (APP.mode === "host" && S.tick % 2 === 0){ netSend({t:"s", s:snapshot(S), snd:APP.sndq}); APP.sndq = []; } }
+    }
+    const view = APP.mode === "local" ? {mine:[true,true], keys:[["1","2","3","4"],["7","8","9","0"]]} : {mine:[true,false], keys:[["1","2","3","4"],[]]};
+    render(S, view);
+    if (S.phase === "matchEnd" && !APP.ended){ if (APP.mode === "host"){ netSend({t:"s", s:snapshot(S), snd:APP.sndq}); APP.sndq = []; } showEnd(); }
+  } else if (APP.mode === "guest" && S){
+    render(S, {mine:[false,true], keys:[[],["1","2","3","4"]]});
+    if (S.phase === "matchEnd" && !APP.ended) showEnd();
+  } else {
+    drawArena();
+    const f1 = newFighter("becher", 0), f2 = newFighter("burette", 1); f1.x = 300; f2.x = 660; f1.walk = f2.walk = T*0.3;
+    drawFighter(f1); drawFighter(f2);
+  }
+  requestAnimationFrame(loop);
+}
+show("sMenu");
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
