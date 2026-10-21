@@ -190,7 +190,7 @@ button:focus-visible{outline:3px solid var(--coin);outline-offset:2px}
 <div class="wrap">
   <header class="top">
     <h1>Super Détective des <span>ppm</span></h1>
-    <p>Science et technologie · 4<sup>e</sup> secondaire · concentrations en ppm · 4 missions de plateformes · <b style="color:#5ee6a0">Version du 21 octobre</b></p>
+    <p>Science et technologie · 4<sup>e</sup> secondaire · concentrations en ppm · 4 missions de plateformes · <b style="color:#5ee6a0">Version du 21 octobre (B)</b></p>
   </header>
 
   <div class="stage" id="stage">
@@ -427,7 +427,7 @@ const dec = (n, d) => Math.abs(n*Math.pow(10,d) - Math.round(n*Math.pow(10,d))) 
 function mkQ(q, ans, wrongs, unit, e, c){
   const f = v => typeof v === "number" ? `${nf(v)}${unit ? " " + unit : ""}` : v;
   const o = [f(ans)];
-  for (const w of wrongs){ if (typeof w === "number" && (!(w > 0) || !isFinite(w))) continue; const t = f(w); if (!o.includes(t)) o.push(t); if (o.length === 4) break; }
+  for (const w of wrongs){ if (typeof w === "number" && (!(w > 0) || !isFinite(w) || !dec(w, 3))) continue; const t = f(w); if (!o.includes(t)) o.push(t); if (o.length === 4) break; }
   let k = 2; while (o.length < 4 && typeof ans === "number"){ const t = f(cl(ans*k*1.5)); if (!o.includes(t)) o.push(t); k++; }
   return {q, o, a:0, e, c};
 }
@@ -450,7 +450,7 @@ function genQ(wid){ const r = RAW[pk(POOLS[wid] || POOLS.lab)](); return mkQ(r.q
 function genQuick(wid){
   const r = RAW[pk(POOLS[wid] || POOLS.lab)]();
   const f = v => `${nf(v)} ${r.u}`, o = [f(r.ans)];
-  for (const w of r.wr){ if (!(w > 0) || !isFinite(w)) continue; const t = f(cl(w)); if (!o.includes(t)) o.push(t); if (o.length === 3) break; }
+  for (const w of r.wr){ if (!(w > 0) || !isFinite(w) || !dec(w, 3)) continue; const t = f(cl(w)); if (!o.includes(t)) o.push(t); if (o.length === 3) break; }
   while (o.length < 3) o.push(f(cl(r.ans*(o.length+1)*3)));
   const order = shuffle([0,1,2]);
   return {q:r.s, o:order.map(i => o[i]), a:order.indexOf(0), e:r.e, c:r.c};
@@ -1328,22 +1328,25 @@ function mulberry32(a){ return function(){ a |= 0; a = a + 0x6D2B79F5 | 0; let t
 function withSeed(seed, fn){ const r = Math.random; Math.random = mulberry32(seed); try { return fn(); } finally { Math.random = r; } }
 const SEG_FINISH = ["                ","                ","                ","                ","                ","                ","                ","                ","################","################"];
 const RACE_COL = ["#5ee6c8", "#ff7a59"];
+// Rangée de blocs-réponses suivie d'une barrière : elle s'ouvre seulement quand on a répondu
+const SEG_ANSWER_R = ["                 D  ","                 D  ","                 D  ","                 D  ","  AAA  AAA  AAA  D  ","                 D  ","                 D  ","            e    D  ","####################","####################"];
 
 function buildRace(seed){
   return withSeed(seed, () => {
     const commons = shuffle(SEG_COMMON).slice(0, 6).map(r => r.map(row => row.replace(/\?/g, "B")));
     const list = [SEG_START];
-    commons.forEach((c, i) => { list.push(c); if (i < 5) list.push(SEG_ANSWER); });
+    commons.forEach((c, i) => { list.push(c); if (i < 5) list.push(SEG_ANSWER_R); });
     list.push(SEG_FINISH);
     const map = []; for (let r=0;r<14;r++) map.push([]);
     const spawns = [], coins = [], groups = []; let finCol = 0;
     for (const rowsIn of list){
       const w = Math.max(...rowsIn.map(r => r.length)), c0 = map[0].length; if (rowsIn === SEG_FINISH) finCol = c0 + 9;
-      const rows = Array(4).fill(" ".repeat(w)).concat(rowsIn.map(r => r.padEnd(w, " "))); let grp = null;
+      const rows = Array(4).fill(" ".repeat(w)).concat(rowsIn.map(r => r.padEnd(w, " "))); let grp = null; const gate = [];
       rows.forEach((row, r) => { for (let i=0;i<w;i++){ let ch = row[i];
         if ("ef".includes(ch)){ spawns.push({type:ch, c:c0+i, r}); ch = " "; }
         else if (ch === "o"){ coins.push({x:(c0+i)*40+20, y:r*40+20}); ch = " "; }
-        else if (ch === "A"){ if (!grp){ grp = {runs:[], r}; groups.push(grp); } const last = grp.runs[grp.runs.length-1]; if (last && last.c1 === c0+i-1) last.c1 = c0+i; else grp.runs.push({c0:c0+i, c1:c0+i}); }
+        else if (ch === "D"){ gate.push({c:c0+i, r}); }
+        else if (ch === "A"){ if (!grp){ grp = {runs:[], r, gate}; groups.push(grp); } const last = grp.runs[grp.runs.length-1]; if (last && last.c1 === c0+i-1) last.c1 = c0+i; else grp.runs.push({c0:c0+i, c1:c0+i}); }
         map[r].push(ch); } });
     }
     groups.forEach((G, i) => { const k = i % 3; G.q = k === 0 ? genQuick("lab") : k === 1 ? genQuick("turbo") : normQuick(pk([5,10,20])); });
@@ -1364,7 +1367,7 @@ function openRace(){
 function raceUI(which, extra){
   const el = $("raceUI"); el.hidden = false;
   if (which === "modes"){
-    el.innerHTML = `<h2>Course des <em>ppm</em></h2><p>Même parcours pour tout le monde. Frappe par en dessous le bloc-réponse qui porte la bonne lettre : <b>turbo</b> si c'est juste, <b>fausse manip</b> (tu figes 1,5 s) si c'est faux. Le premier au drapeau gagne !</p>
+    el.innerHTML = `<h2>Course des <em>ppm</em></h2><p>Même parcours pour tout le monde. Une barrière bloque chaque rangée de blocs-réponses : frappe par en dessous le bloc de la bonne réponse pour l'ouvrir. <b>Juste</b> : turbo de 3 s. <b>Faux</b> : fausse manip, tu figes 1,5 s. Le premier au drapeau gagne !</p>
       <div class="rmodes"><button class="btn" id="rLocal" type="button">2 joueurs<small>Écran partagé, même appareil</small></button><button class="btn gold" id="rOnline" type="button">En ligne<small>Deux appareils, un code</small></button><button class="btn" id="rSolo" type="button">Contre la montre<small>Bats ton record</small></button></div>
       <p class="rhelp">Joueur 1 : <kbd>A</kbd> <kbd>D</kbd> et <kbd>W</kbd> pour sauter · Joueur 2 : <kbd>←</kbd> <kbd>→</kbd> et <kbd>↑</kbd> · Sur iPad : boutons sous l'écran</p>
       <button class="btn" id="rBack" type="button">Retour à la carte</button>`;
@@ -1418,7 +1421,7 @@ document.querySelectorAll("#racePads button").forEach(b => {
 });
 
 // ---------- physique d'un coureur ----------
-const RSOLID = "#B=PAGRX";
+const RSOLID = "#B=PAGRXD";
 function rTile(P, c, r){ return (c < 0 || c >= RACE.R.COLS) ? "#" : (r < 0 || r >= 14) ? " " : P.map[r][c]; }
 function rSolid(ch){ return RSOLID.includes(ch); }
 function rHit(P, c, r){
@@ -1426,6 +1429,7 @@ function rHit(P, c, r){
   if (gi < 0 || P.done[gi] >= 0){ AudioSys.sfx("bump"); return; }
   const G = R.groups[gi], k = G.runs.findIndex(u => c >= u.c0 && c <= u.c1); P.done[gi] = k;
   G.runs.forEach((u, i) => { for (let cc=u.c0; cc<=u.c1; cc++) P.map[r][cc] = i === G.q.a ? "G" : (i === k ? "R" : "X"); });
+  (G.gate || []).forEach(t => { P.map[t.r][t.c] = " "; });
   if (k === G.q.a){ P.right++; P.boost = 3.2; AudioSys.sfx("good"); unlockCard(G.q.c); P.fb = {ok:true, t:3, h:"Turbo !", e:G.q.e}; }
   else { P.wrong++; P.stun = 1.5; P.vx = 0; AudioSys.sfx("bad"); P.fb = {ok:false, t:4.5, h:`Fausse manip ! Réponse : ${"ABC"[G.q.a]} = ${G.q.o[G.q.a]}`, e:G.q.e}; }
 }
@@ -1489,11 +1493,21 @@ function rDrawWorld(P, others, vw){
       else if (ch === "B"){ px(x,y,40,40,TH.brick[0]); px(x+2,y+2,36,36,TH.brick[1]); px(x,y+19,40,2,TH.brick[0]); px(x+19,y,2,19,TH.brick[0]); }
       else if (ch === "=" || ch === "P"){ px(x,y,40,40,TH.block[0]); px(x+3,y+3,34,34,TH.block[1]); }
       else if (ch === "-"){ px(x, y, 40, 10, TH.plank); }
+      else if (ch === "D"){ px(x+14, y, 12, 40, "#2a3440"); const on = Math.floor(T*6 + r) % 2; px(x+4, y+8, 32, 5, on ? "#ff5d6c" : "#ff9aa5"); px(x+4, y+26, 32, 5, on ? "#ff9aa5" : "#ff5d6c"); }
       else if ("AGRX".includes(ch)){ const col = ch === "G" ? ["#1f7a4d","#5ee6a0"] : ch === "R" ? ["#7a1f2a","#ff5d6c"] : ch === "X" ? ["#2e2640","#4a4060"] : ["#0d4a5a","#5ee6c8"]; px(x,y,40,40,col[0]); px(x, y+2, 40, 36, col[1]); }
     } }
   // lettres des blocs-réponses
-  R.groups.forEach((G, gi) => { G.runs.forEach((u, i) => { const ux = u.c0*40, uw = (u.c1-u.c0+1)*40; if (ux + uw < cam - 40 || ux > cam + vw + 40) return;
-    g.fillStyle = P.done[gi] >= 0 && i !== G.q.a ? "#ffffff88" : "#08202a"; font(28); g.textAlign = "center"; g.fillText("ABC"[i], ux + uw/2, G.r*40 + 31); }); });
+  R.groups.forEach((G, gi) => {
+    const gx0 = G.runs[0].c0*40, gx1 = (G.runs[G.runs.length-1].c1 + 1)*40; if (gx1 < cam - 200 || gx0 > cam + vw + 200) return;
+    G.runs.forEach((u, i) => { const ux = u.c0*40, uw = (u.c1-u.c0+1)*40;
+      g.fillStyle = P.done[gi] >= 0 && i !== G.q.a ? "#ffffff88" : "#08202a"; font(26); g.textAlign = "center"; g.fillText("ABC"[i], ux + 20, G.r*40 + 30);
+      g.font = `700 14px "Atkinson Hyperlegible", sans-serif`; g.textAlign = "left"; g.fillText(G.q.o[i], ux + 38, G.r*40 + 26); });
+    // panneau de la question au-dessus de la rangée
+    const txt = P.done[gi] >= 0 ? "✓ " + G.q.o[G.q.a] : G.q.q; g.font = `700 20px "Atkinson Hyperlegible", sans-serif`; const tw = Math.max(260, g.measureText(txt).width + 30), cx = (gx0 + gx1)/2;
+    px(cx - tw/2, G.r*40 - 120, tw, 46, "#000d"); px(cx - tw/2, G.r*40 - 76, tw, 4, P.done[gi] >= 0 ? "#5ee6a0" : "#ffc93c"); px(cx - 3, G.r*40 - 72, 6, 72, "#5d6d7a");
+    g.fillStyle = P.done[gi] >= 0 ? "#5ee6a0" : "#fff"; g.textAlign = "center"; g.fillText(txt, cx, G.r*40 - 90);
+    if (P.done[gi] < 0 && G.gate && G.gate.length){ const t0 = G.gate[0]; g.save(); g.translate(t0.c*40 + 20, (t0.r + 2)*40); g.rotate(-Math.PI/2); g.fillStyle = "#ffc93c"; g.font = `700 13px "Pixelify Sans", monospace`; g.textAlign = "center"; g.fillText("RÉPONDS", 0, -26); g.restore(); }
+  });
   for (const co of P.coins){ if (!co.on || co.x < cam - 20 || co.x > cam + vw + 20) continue; g.fillStyle = "#ffc93c"; g.beginPath(); g.ellipse(co.x, co.y, 9*Math.abs(Math.cos(T*4 + co.x)) + 1, 13, 0, 0, 7); g.fill(); }
   for (const e of P.en){ if (e.alive && e.x > cam - 60 && e.x < cam + vw + 60) drawFoe(e, e.x, e.y, TH); }
   // drapeau
@@ -1514,16 +1528,22 @@ function rView(P, others, vx, vy, vw, vh, s, label){
   g.restore();
   // bandeau question (en coordonnées écran, toujours lisible)
   g.save(); g.beginPath(); g.rect(vx, vy, vw, vh); g.clip();
-  const gi = rNextGroup(P), bh = 54;
-  g.fillStyle = "#000c"; g.fillRect(vx, vy, vw, bh); g.fillStyle = RACE_COL[P.idx]; g.fillRect(vx, vy + bh - 3, vw, 3);
-  g.textAlign = "left"; g.fillStyle = RACE_COL[P.idx]; font(15); g.fillText(label, vx + 10, vy + 20);
-  g.fillStyle = "#fff"; font(18); g.textAlign = "right"; g.fillText(fmtT(P.time), vx + vw - 10, vy + 22);
-  g.font = `700 13px "Atkinson Hyperlegible", sans-serif`; g.fillStyle = "#ffc93c"; g.fillText(`✓ ${P.right}  ✗ ${P.wrong}`, vx + vw - 10, vy + 42);
+  const gi = rNextGroup(P), split = vh < 400, bh = split ? 78 : 92;
+  g.fillStyle = "#000d"; g.fillRect(vx, vy, vw, bh); g.fillStyle = RACE_COL[P.idx]; g.fillRect(vx, vy + bh - 4, vw, 4);
+  g.textAlign = "left"; g.fillStyle = RACE_COL[P.idx]; font(14); g.fillText(label, vx + 12, vy + 18);
+  g.fillStyle = "#fff"; font(20); g.textAlign = "right"; g.fillText(fmtT(P.time), vx + vw - 12, vy + 22);
+  g.font = `700 14px "Atkinson Hyperlegible", sans-serif`; g.fillStyle = "#ffc93c"; g.fillText(`✓ ${P.right}   ✗ ${P.wrong}`, vx + vw - 12, vy + 42);
   g.textAlign = "left";
-  if (P.fb){ g.fillStyle = P.fb.ok ? "#5ee6a0" : "#ff5d6c"; g.font = `700 15px "Atkinson Hyperlegible", sans-serif`; g.fillText(P.fb.h, vx + 130, vy + 20); g.fillStyle = "#e8eef2"; g.font = `400 13px "Atkinson Hyperlegible", sans-serif`; const t = P.fb.e.length > 95 ? P.fb.e.slice(0, 93) + "…" : P.fb.e; g.fillText(t, vx + 10, vy + 42); }
-  else if (gi >= 0 && !P.fin){ const G = RACE.R.groups[gi]; g.fillStyle = "#fff"; g.font = `700 16px "Atkinson Hyperlegible", sans-serif`; g.fillText(G.q.q, vx + 130, vy + 20);
-    g.font = `700 14px "Atkinson Hyperlegible", sans-serif`; let xx = vx + 10; G.q.o.forEach((o, i) => { g.fillStyle = "#5ee6c8"; g.fillText("ABC"[i] + " :", xx, vy + 42); g.fillStyle = "#f4efe0"; g.fillText(o, xx + 26, vy + 42); xx += 30 + g.measureText(o).width + 22; }); }
-  else if (P.fin){ g.fillStyle = "#5ee6a0"; g.font = `700 16px "Atkinson Hyperlegible", sans-serif`; g.fillText("Arrivé ! En attente des autres…", vx + 130, vy + 20); }
+  const qy = vy + (split ? 42 : 48), oy = vy + (split ? 66 : 76);
+  if (P.fb){
+    g.fillStyle = P.fb.ok ? "#5ee6a0" : "#ff5d6c"; g.font = `700 ${split ? 19 : 22}px "Atkinson Hyperlegible", sans-serif`; g.fillText(P.fb.h, vx + 12, qy);
+    g.fillStyle = "#e8eef2"; g.font = `400 ${split ? 14 : 16}px "Atkinson Hyperlegible", sans-serif`; const t = P.fb.e.length > 105 ? P.fb.e.slice(0, 103) + "…" : P.fb.e; g.fillText(t, vx + 12, oy);
+  } else if (gi >= 0 && !P.fin){
+    const G = RACE.R.groups[gi], near = (G.runs[0].c0*40 - P.x) < 700;
+    g.fillStyle = near ? "#ffc93c" : "#ffffffcc"; g.font = `700 ${split ? 20 : 24}px "Atkinson Hyperlegible", sans-serif`; g.fillText((near ? "QUESTION : " : "Prochaine question : ") + G.q.q, vx + 12, qy);
+    g.font = `700 ${split ? 17 : 19}px "Atkinson Hyperlegible", sans-serif`; let xx = vx + 12;
+    G.q.o.forEach((o, i) => { g.fillStyle = "#5ee6c8"; g.fillText("ABC"[i] + " :", xx, oy); const w1 = g.measureText("A : ").width; g.fillStyle = "#f4efe0"; g.fillText(o, xx + w1, oy); xx += w1 + g.measureText(o).width + 34; });
+  } else if (P.fin){ g.fillStyle = "#5ee6a0"; g.font = `700 20px "Atkinson Hyperlegible", sans-serif`; g.fillText("Arrivé ! En attente des autres…", vx + 12, qy); }
   // progression
   const R = RACE.R, px0 = vx + 20, pw = vw - 40, py = vy + vh - 16;
   g.fillStyle = "#000a"; g.fillRect(px0 - 6, py - 8, pw + 12, 16); g.fillStyle = "#ffffff33"; g.fillRect(px0, py - 2, pw, 4);
