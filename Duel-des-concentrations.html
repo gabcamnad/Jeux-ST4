@@ -7,6 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@500;700&family=Atkinson+Hyperlegible:wght@400;700&display=swap">
 <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mqtt@4.3.7/dist/mqtt.min.js"></script>
 <style>
 /* Arcade cabinet: one 16:9 fight stage; DOM screens (menu, choix, salle en ligne, fin) overlay it; touch pads below. */
 :root{
@@ -150,6 +151,157 @@ kbd{font-family:var(--f-display);background:var(--panel);border:1px solid var(--
   <p class="help"><span>Joueur 1 : <kbd>A</kbd><kbd>D</kbd> <kbd>W</kbd> <kbd>S</kbd> · <kbd>F</kbd> frapper · <kbd>G</kbd> pouvoir · <kbd>1</kbd>–<kbd>4</kbd></span><span>Joueur 2 : flèches · <kbd>K</kbd> frapper · <kbd>L</kbd> pouvoir · <kbd>7</kbd>–<kbd>0</kbd></span><span><kbd>Échap</kbd> menu</span></p>
 </div>
 <script>
+// ================= RÉSEAU ROBUSTE : direct (WebRTC) + relais Internet (MQTT) =================
+// Les deux chemins sont tentés en même temps ; le premier qui fonctionne est gardé.
+// Direct : rapide, mais souvent bloqué par les réseaux d'école ou cellulaires.
+// Relais : passe par un serveur public (WebSocket sécurisé), fonctionne presque partout.
+const NETCFG = (() => {
+  const cfg = {
+    brokers: ["wss://broker.emqx.io:8084/mqtt", "wss://broker.hivemq.com:8884/mqtt", "wss://test.mosquitto.org:8081/mqtt"],
+    peer: null,
+    ice: [
+      {urls:"stun:stun.l.google.com:19302"}, {urls:"stun:stun1.l.google.com:19302"}, {urls:"stun:global.stun.twilio.com:3478"},
+      {urls:"turn:openrelay.metered.ca:80", username:"openrelayproject", credential:"openrelayproject"},
+      {urls:"turn:openrelay.metered.ca:443", username:"openrelayproject", credential:"openrelayproject"},
+      {urls:"turn:openrelay.metered.ca:443?transport=tcp", username:"openrelayproject", credential:"openrelayproject"}
+    ]
+  };
+  // Réglages de test : #net=mqtt:ws://localhost:8888|peer:localhost:9000|nomqtt|nopeer
+  const m = location.hash.match(/#net=([^#]+)/);
+  if (m) decodeURIComponent(m[1]).split("|").forEach(part => {
+    if (part.startsWith("mqtt:")) cfg.brokers = [part.slice(5)];
+    else if (part.startsWith("peer:")){ const [h, p] = part.slice(5).split(":"); cfg.peer = {host:h, port:+p, path:"/", secure:false}; }
+    else if (part === "nomqtt") cfg.brokers = [];
+    else if (part === "nopeer") cfg.noPeer = true;
+  });
+  return cfg;
+})();
+
+function makeNet(game){
+  const TOPIC = "jeux-st4-qc/" + game + "/";
+  const PFX = "jeux-st4-" + game + "-";
+  const st = {peer:null, clients:[], link:null, timers:[], closed:false};
+  const hasPeer = () => typeof Peer !== "undefined" && !NETCFG.noPeer;
+  const hasMqtt = () => typeof mqtt !== "undefined" && NETCFG.brokers.length > 0;
+  const peerOpts = () => Object.assign({config:{iceServers:NETCFG.ice}, debug:0}, NETCFG.peer || {});
+  const later = (fn, ms) => { const t = setTimeout(fn, ms); st.timers.push(t); return t; };
+
+  // ---- objet « lien » commun aux deux chemins ----
+  function makeLink(kind, sendFn, closeFn){
+    const L = {kind, h:{}, alive:true, lastIn:Date.now(),
+      on(e, f){ (L.h[e] = L.h[e] || []).push(f); return L; },
+      emit(e, a){ (L.h[e] || []).forEach(f => { try { f(a); } catch(err){ console.error(err); } }); },
+      send(o){ if (L.alive) { try { sendFn(o); } catch(e){} } },
+      close(){ if (!L.alive) return; L.alive = false; try { closeFn(); } catch(e){} }
+    };
+    return L;
+  }
+  function adopt(L, onLink){
+    if (st.link || st.closed){ L.close(); return false; }
+    st.link = L;
+    // fermer l'autre chemin
+    if (L.kind === "relais"){ try { st.peer && st.peer.destroy(); } catch(e){} st.peer = null; st.clients.filter(c => c !== L._client).forEach(c => { try { c.end(true); } catch(e){} }); }
+    else { st.clients.forEach(c => { try { c.end(true); } catch(e){} }); st.clients = []; }
+    onLink(L); return true;
+  }
+
+  // ---- relais MQTT ----
+  function mqttConnect(url, onReady, onFail){
+    let done = false;
+    const c = mqtt.connect(url, {clientId:"st4_" + Math.random().toString(36).slice(2, 10), clean:true, connectTimeout:6000, reconnectPeriod:0, keepalive:20});
+    c.on("connect", () => { if (!done){ done = true; onReady(c); } });
+    const fail = () => { if (!done){ done = true; try { c.end(true); } catch(e){} onFail(); } };
+    c.on("error", fail); c.on("close", fail); later(fail, 7000);
+    return c;
+  }
+  function relayLink(c, code, myBox, otherBox, onLink){
+    const L = makeLink("relais", o => c.publish(TOPIC + code + "/" + otherBox, JSON.stringify({k:"d", d:o})), () => { try { c.publish(TOPIC + code + "/" + otherBox, JSON.stringify({k:"bye"})); } catch(e){} later(() => { try { c.end(true); } catch(e){} }, 200); });
+    L._client = c;
+    const hb = setInterval(() => { if (!L.alive){ clearInterval(hb); return; } try { c.publish(TOPIC + code + "/" + otherBox, JSON.stringify({k:"hb"})); } catch(e){} if (Date.now() - L.lastIn > 9000){ clearInterval(hb); L.alive = false; L.emit("close"); } }, 2000);
+    c.on("close", () => { if (L.alive && st.link === L){ L.alive = false; clearInterval(hb); L.emit("close"); } });
+    L._msg = m => { L.lastIn = Date.now(); if (m.k === "d") L.emit("data", m.d); else if (m.k === "bye"){ if (L.alive){ L.alive = false; clearInterval(hb); L.emit("close"); } } };
+    return L;
+  }
+
+  // ---- direct PeerJS ----
+  function directLink(conn){
+    const L = makeLink("direct", o => conn.send(o), () => conn.close());
+    conn.on("data", d => { L.lastIn = Date.now(); L.emit("data", d); });
+    conn.on("close", () => { if (L.alive){ L.alive = false; L.emit("close"); } });
+    conn.on("error", () => { if (L.alive){ L.alive = false; L.emit("close"); } });
+    return L;
+  }
+
+  const API = {
+    available(){ return hasPeer() || hasMqtt(); },
+    // Héberger : onCode(code) dès que la partie est prête ; onLink(lien) quand l'adversaire arrive
+    host(onCode, onLink, onStatus){
+      st.closed = false; st.link = null;
+      const code = Array.from({length:4}, () => "ABCDEFGHJKMNPQRSTUVWXYZ"[Math.floor(Math.random()*23)]).join("");
+      let ready = 0, failed = 0, total = 0;
+      const okOne = () => { ready++; if (ready === 1){ onCode(code); onStatus("En attente de ton adversaire… Il choisit « Rejoindre » et tape ce code."); } };
+      const failOne = () => { failed++; if (failed === total && !ready) onStatus("Impossible de joindre les serveurs de jeu. Vérifie la connexion Internet (ou essaie le partage de connexion d'un cellulaire)."); };
+      onStatus("Préparation de la partie…");
+      if (hasMqtt()) NETCFG.brokers.forEach(url => { total++;
+        mqttConnect(url, c => {
+          st.clients.push(c); let L = null;
+          c.subscribe(TOPIC + code + "/h", {qos:0}, err => { if (err){ failOne(); return; } okOne(); });
+          c.on("message", (t, buf) => { let m; try { m = JSON.parse(buf.toString()); } catch(e){ return; }
+            if (m.k === "join"){
+              if (L && L.gid === m.id){ c.publish(TOPIC + code + "/g", JSON.stringify({k:"ok", to:m.id})); return; }
+              if (st.link){ if (st.link.gid !== m.id) c.publish(TOPIC + code + "/g", JSON.stringify({k:"full", to:m.id})); return; }
+              L = relayLink(c, code, "h", "g", onLink); L.gid = m.id; c.publish(TOPIC + code + "/g", JSON.stringify({k:"ok", to:m.id})); adopt(L, onLink); }
+            else if (L) L._msg(m); });
+        }, failOne); });
+      if (hasPeer()){ total++;
+        try {
+          const p = new Peer(PFX + code.toLowerCase(), peerOpts()); st.peer = p;
+          p.on("open", okOne);
+          p.on("error", err => { if (!ready) failOne(); console.warn("peer", err && err.type); });
+          p.on("connection", conn => { conn.on("open", () => adopt(directLink(conn), onLink)); });
+        } catch(e){ failOne(); }
+      }
+      if (!total) onStatus("Le mode en ligne demande une connexion Internet.");
+    },
+    // Rejoindre une partie avec son code
+    join(code, onLink, onStatus){
+      st.closed = false; st.link = null;
+      const id = Math.random().toString(36).slice(2, 10);
+      let pending = 0;
+      const giveUp = () => { pending--; if (pending <= 0 && !st.link) onStatus(`Aucune partie trouvée avec le code ${code}. Vérifie le code et que la partie est bien créée sur l'autre appareil.`); };
+      onStatus(`Connexion à la partie ${code}…`);
+      if (hasMqtt()) NETCFG.brokers.forEach(url => { pending++;
+        mqttConnect(url, c => {
+          st.clients.push(c); let L = null, tries = 0;
+          c.subscribe(TOPIC + code + "/g", {qos:0});
+          c.on("message", (t, buf) => { let m; try { m = JSON.parse(buf.toString()); } catch(e){ return; }
+            if (m.k === "ok" && m.to === id && !L){ L = relayLink(c, code, "g", "h", onLink); adopt(L, onLink); }
+            else if (m.k === "full" && m.to === id && !st.link) onStatus("Cette partie est déjà complète.");
+            else if (L) L._msg(m); });
+          const knock = () => { if (st.link || st.closed) return; if (tries++ > 10){ try { c.end(true); } catch(e){} giveUp(); return; } c.publish(TOPIC + code + "/h", JSON.stringify({k:"join", id})); later(knock, 1200); };
+          knock();
+        }, giveUp); });
+      if (hasPeer()){ pending++;
+        try {
+          const p = new Peer(undefined, peerOpts()); st.peer = p;
+          p.on("open", () => { const conn = p.connect(PFX + code.toLowerCase(), {reliable:true, serialization:"json"}); conn.on("open", () => adopt(directLink(conn), onLink)); });
+          p.on("error", err => { if (err && err.type === "peer-unavailable") giveUp(); });
+          later(() => { if (!st.link && st.peer === p) { /* le direct n'a pas abouti : le relais continue */ } }, 10000);
+        } catch(e){ giveUp(); }
+      }
+      if (!pending) onStatus("Le mode en ligne demande une connexion Internet.");
+      later(() => { if (!st.link) onStatus("La connexion prend du temps… Si rien ne se passe, vérifie le code, ou essaie le partage de connexion d'un cellulaire."); }, 14000);
+    },
+    close(){
+      st.closed = true; st.timers.forEach(clearTimeout); st.timers = [];
+      try { st.link && st.link.close(); } catch(e){}
+      try { st.peer && st.peer.destroy(); } catch(e){}
+      st.clients.forEach(c => { try { c.end(true); } catch(e){} });
+      st.clients = []; st.peer = null; st.link = null;
+    }
+  };
+  return API;
+}
 // ================= DUEL DES CONCENTRATIONS =================
 const W = 960, H = 540, GROUND = 450;
 const cv = document.getElementById("cv"), g = cv.getContext("2d");
@@ -647,57 +799,40 @@ $("endAgain").addEventListener("click", () => {
 $("endMenu").addEventListener("click", toMenu);
 function toMenu(){ netClose(); APP.S = null; APP.mode = null; APP.ended = false; show("sMenu"); }
 
-// ---------- Réseau (PeerJS, pair à pair) ----------
-const PeerCls = location.hash === "#bctest" ? FakePeerFactory() : (typeof Peer !== "undefined" ? Peer : null);
-const PREFIX = "duel-st4-conc-";
-function netSend(m){ try { if (APP.conn && APP.conn.open !== false) APP.conn.send(m); } catch(e){} }
-function netClose(){ try { APP.conn && APP.conn.close(); } catch(e){} try { APP.peer && APP.peer.destroy(); } catch(e){} APP.conn = null; APP.peer = null; clearTimeout(APP.to); }
+// ---------- Réseau (direct + relais, voir net.js) ----------
+const NET = makeNet("duel");
+function netSend(m){ if (APP.link) APP.link.send(m); }
+function netClose(){ try { NET.close(); } catch(e){} APP.link = null; }
 function status(t){ $("onStatus").textContent = t; }
 function openOnline(){
   show("sOnline"); $("onChoice").hidden = false; $("onHostBox").hidden = true; $("onJoinBox").hidden = true; status("");
-  if (!PeerCls) status("Le mode en ligne n'est pas disponible : la page doit être ouverte avec une connexion Internet.");
+  if (!NET.available()) status("Le mode en ligne n'est pas disponible : la page doit être ouverte avec une connexion Internet.");
 }
 $("onBack").addEventListener("click", () => { netClose(); show("sMenu"); });
 $("onJoinShow").addEventListener("click", () => { $("onChoice").hidden = true; $("onJoinBox").hidden = false; $("onCodeIn").focus(); });
 $("onCodeIn").addEventListener("keydown", e => { if (e.key === "Enter") $("onJoin").click(); });
+function useLink(L, role){
+  APP.link = L; APP.netKind = L.kind;
+  L.on("data", d => role === "host" ? onHostData(d) : onGuestData(d));
+  L.on("close", netLost);
+}
 $("onHost").addEventListener("click", () => {
-  if (!PeerCls) return;
-  $("onChoice").hidden = true; $("onHostBox").hidden = false;
-  const tryHost = () => {
-    const code = Array.from({length:4}, () => "ABCDEFGHJKMNPQRSTUVWXYZ"[Math.floor(Math.random()*23)]).join("");
-    status("Création de la partie…");
-    const peer = new PeerCls(PREFIX + code.toLowerCase()); APP.peer = peer;
-    peer.on("open", () => { $("onCode").textContent = code; status("En attente de ton adversaire… Il doit choisir « Rejoindre une partie » et taper ce code."); });
-    peer.on("error", err => { if (err && err.type === "unavailable-id"){ try { peer.destroy(); } catch(e){} tryHost(); } else status("Erreur réseau : " + (err && err.type ? err.type : "inconnue") + ". Vérifie la connexion Internet et réessaie."); });
-    peer.on("connection", conn => {
-      if (APP.conn){ conn.close && conn.close(); return; }
-      APP.conn = conn;
-      conn.on("data", d => onHostData(d));
-      conn.on("close", () => netLost());
-      conn.on("open", () => status("Adversaire connecté !"));
-    });
-  };
-  tryHost();
+  if (!NET.available()) return;
+  netClose();
+  $("onChoice").hidden = true; $("onHostBox").hidden = false; $("onCode").textContent = "····";
+  NET.host(code => { $("onCode").textContent = code; }, L => { status("Adversaire connecté (" + (L.kind === "direct" ? "connexion directe" : "relais Internet") + ") !"); useLink(L, "host"); }, status);
 });
 $("onJoin").addEventListener("click", () => {
-  if (!PeerCls) return;
+  if (!NET.available()) return;
   const code = $("onCodeIn").value.trim().toUpperCase();
   if (code.length !== 4){ status("Le code contient 4 lettres."); return; }
-  status("Connexion à la partie " + code + "…");
-  const peer = new PeerCls(); APP.peer = peer;
-  peer.on("error", err => status(err && err.type === "peer-unavailable" ? "Aucune partie trouvée avec ce code. Vérifie le code et que la partie est bien créée." : "Erreur réseau : " + (err && err.type ? err.type : "inconnue") + "."));
-  peer.on("open", () => {
-    const conn = peer.connect(PREFIX + code.toLowerCase(), {reliable:true, serialization:"json"}); APP.conn = conn;
-    conn.on("open", () => { status("Connecté ! Le combat commence…"); conn.send({t:"hello", ch:APP.myChar}); });
-    conn.on("data", d => onGuestData(d));
-    conn.on("close", () => netLost());
-  });
-  clearTimeout(APP.to); APP.to = setTimeout(() => { if (APP.mode !== "guest") status("La connexion prend du temps. Le réseau de l'école bloque peut-être les connexions entre appareils : essaie le partage de connexion d'un cellulaire."); }, 12000);
+  netClose();
+  NET.join(code, L => { status("Connecté (" + (L.kind === "direct" ? "connexion directe" : "relais Internet") + ") ! Le combat commence…"); useLink(L, "guest"); L.send({t:"hello", ch:APP.myChar}); }, status);
 });
-function netLost(){ if (!APP.mode || (APP.mode !== "host" && APP.mode !== "guest")) return; APP.S = null; const m = APP.mode; APP.mode = null; netClose(); openOnline(); status(m === "host" || m === "guest" ? "La connexion avec l'adversaire a été perdue." : ""); }
+function netLost(){ if (!APP.mode || (APP.mode !== "host" && APP.mode !== "guest")){ if (APP.link){ APP.link = null; status("La connexion avec l'adversaire a été perdue."); } return; } APP.S = null; APP.mode = null; netClose(); openOnline(); status("La connexion avec l'adversaire a été perdue."); }
 function onHostData(d){
   if (!d || !d.t) return;
-  if (d.t === "hello"){ APP.mode = "host"; APP.me = 0; APP.guestChar = d.ch; startMatch(APP.myChar, d.ch); netSend({t:"start", diff:APP.diff}); }
+  if (d.t === "hello"){ if (APP.mode === "host" && APP.S) return; APP.mode = "host"; APP.me = 0; APP.guestChar = d.ch; startMatch(APP.myChar, d.ch); netSend({t:"start", diff:APP.diff}); }
   else if (!APP.S) return;
   else if (d.t === "i") setKey(1, d.k, d.v);
   else if (d.t === "a"){ if (APP.S.f[1].q) APP.S.inp[1].ans = d.i; }
@@ -706,28 +841,21 @@ function onHostData(d){
 function hostRestart(){ startMatch(APP.myChar, APP.guestChar); netSend({t:"start", diff:APP.diff}); }
 function onGuestData(d){
   if (!d || !d.t) return;
-  if (d.t === "start"){ APP.mode = "guest"; APP.me = 1; APP.gk = {}; APP.ended = false; APP.S = null; hideAll(); setupPads(); clearTimeout(APP.to); }
-  else if (d.t === "s"){ if (APP.mode !== "guest") return; APP.S = d.s; (d.snd || []).forEach(k => _beep(k)); }
+  if (d.t === "start"){ APP.mode = "guest"; APP.me = 1; APP.gk = {}; APP.ended = false; APP.S = null; APP.prevS = null; hideAll(); setupPads(); }
+  else if (d.t === "s"){ if (APP.mode !== "guest") return; APP.prevS = APP.S; APP.prevT = APP.curT || performance.now(); APP.S = d.s; APP.curT = performance.now(); (d.snd || []).forEach(k => _beep(k)); }
 }
+const r1 = (k, v) => typeof v === "number" ? Math.round(v*10)/10 : v;
 function snapshot(S){
-  const s = JSON.parse(JSON.stringify({diff:S.diff, f:S.f, orbs:S.orbs, proj:S.proj, fx:S.fx, round:S.round, time:S.time, phase:S.phase, pt:S.pt, msg:S.msg, winner:S.winner}));
+  const s = JSON.parse(JSON.stringify({diff:S.diff, f:S.f, orbs:S.orbs, proj:S.proj, fx:S.fx, round:S.round, time:S.time, phase:S.phase, pt:S.pt, msg:S.msg, winner:S.winner}, r1));
   s.f.forEach(f => { if (f.q){ delete f.q.a; delete f.q.e; } });
   return s;
 }
-
-// Transport de test (deux onglets d'un même navigateur), activé seulement avec #bctest
-function FakePeerFactory(){
-  const bc = new BroadcastChannel("duel-fakepeer");
-  class Ev { constructor(){ this.h = {}; } on(e, f){ (this.h[e] = this.h[e] || []).push(f); } emit(e, a){ (this.h[e] || []).forEach(f => f(a)); } }
-  class FConn extends Ev { constructor(peer, rid){ super(); this.peer = peer; this.rid = rid; this.open = false; } send(d){ bc.postMessage({to:this.rid, from:this.peer.id, type:"data", data:d}); } close(){ bc.postMessage({to:this.rid, from:this.peer.id, type:"close"}); } }
-  return class FPeer extends Ev {
-    constructor(id){ super(); this.id = id || "g" + Math.random().toString(36).slice(2,8); this.c = {}; bc.addEventListener("message", ev => this.msg(ev.data)); setTimeout(() => this.emit("open", this.id), 30); }
-    connect(rid){ const c = new FConn(this, rid); this.c[rid] = c; bc.postMessage({to:rid, from:this.id, type:"connect"}); return c; }
-    msg(m){ if (m.to !== this.id) return; const c = this.c[m.from];
-      if (m.type === "connect"){ const n = new FConn(this, m.from); this.c[m.from] = n; this.emit("connection", n); setTimeout(() => { n.open = true; n.emit("open"); bc.postMessage({to:m.from, from:this.id, type:"accept"}); }, 20); }
-      else if (m.type === "accept" && c){ c.open = true; c.emit("open"); } else if (m.type === "data" && c) c.emit("data", m.data); else if (m.type === "close" && c) c.emit("close"); }
-    destroy(){}
-  };
+// Vue de l'invité : positions interpolées entre les deux derniers instantanés (mouvement plus fluide)
+function guestView(){
+  const S = APP.S, P = APP.prevS; if (!P || !S || P.f.length !== S.f.length) return S;
+  const span = Math.max(16, APP.curT - APP.prevT), a = Math.min(1, (performance.now() - APP.curT) / span);
+  const V = Object.assign({}, S, {f:S.f.map((f, i) => Object.assign({}, f, {x:P.f[i].x + (f.x - P.f[i].x)*a, y:P.f[i].y + (f.y - P.f[i].y)*a}))});
+  return V;
 }
 
 // ---------- Boucle ----------
@@ -739,13 +867,13 @@ function loop(now){
     if (fighting()){
       acc += dt; let n = 0;
       while (acc >= 1/60 && n < 6){ acc -= 1/60; n++; if (APP.mode === "cpu") cpuThink(S, 1, 1/60); step(S, 1/60);
-        if (APP.mode === "host" && S.tick % 2 === 0){ netSend({t:"s", s:snapshot(S), snd:APP.sndq}); APP.sndq = []; } }
+        if (APP.mode === "host" && S.tick % (APP.netKind === "relais" ? 4 : 2) === 0){ netSend({t:"s", s:snapshot(S), snd:APP.sndq}); APP.sndq = []; } }
     }
     const view = APP.mode === "local" ? {mine:[true,true], keys:[["1","2","3","4"],["7","8","9","0"]]} : {mine:[true,false], keys:[["1","2","3","4"],[]]};
     render(S, view);
     if (S.phase === "matchEnd" && !APP.ended){ if (APP.mode === "host"){ netSend({t:"s", s:snapshot(S), snd:APP.sndq}); APP.sndq = []; } showEnd(); }
   } else if (APP.mode === "guest" && S){
-    render(S, {mine:[false,true], keys:[[],["1","2","3","4"]]});
+    render(guestView(), {mine:[false,true], keys:[[],["1","2","3","4"]]});
     if (S.phase === "matchEnd" && !APP.ended) showEnd();
   } else {
     drawArena();

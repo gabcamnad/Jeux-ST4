@@ -7,6 +7,7 @@
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mqtt@4.3.7/dist/mqtt.min.js"></script>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;600;700&family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&display=swap">
 <style>
 /* Layout: one 16:9 "console" stage centred on a dark cabinet; DOM overlays sit on the canvas; touch pad below on small screens. Single dark arcade look by choice. */
@@ -231,6 +232,157 @@ button:focus-visible{outline:3px solid var(--coin);outline-offset:2px}
   <p class="help"><span><kbd>←</kbd> <kbd>→</kbd> bouger</span><span><kbd>Espace</kbd> / <kbd>↑</kbd> sauter</span><span><kbd>X</kbd> lancer une fiole (pouvoir Neutralisant)</span><span><kbd>1</kbd>–<kbd>4</kbd> répondre</span><span><kbd>Échap</kbd> retour à la carte</span></p>
 </div>
 <script>
+// ================= RÉSEAU ROBUSTE : direct (WebRTC) + relais Internet (MQTT) =================
+// Les deux chemins sont tentés en même temps ; le premier qui fonctionne est gardé.
+// Direct : rapide, mais souvent bloqué par les réseaux d'école ou cellulaires.
+// Relais : passe par un serveur public (WebSocket sécurisé), fonctionne presque partout.
+const NETCFG = (() => {
+  const cfg = {
+    brokers: ["wss://broker.emqx.io:8084/mqtt", "wss://broker.hivemq.com:8884/mqtt", "wss://test.mosquitto.org:8081/mqtt"],
+    peer: null,
+    ice: [
+      {urls:"stun:stun.l.google.com:19302"}, {urls:"stun:stun1.l.google.com:19302"}, {urls:"stun:global.stun.twilio.com:3478"},
+      {urls:"turn:openrelay.metered.ca:80", username:"openrelayproject", credential:"openrelayproject"},
+      {urls:"turn:openrelay.metered.ca:443", username:"openrelayproject", credential:"openrelayproject"},
+      {urls:"turn:openrelay.metered.ca:443?transport=tcp", username:"openrelayproject", credential:"openrelayproject"}
+    ]
+  };
+  // Réglages de test : #net=mqtt:ws://localhost:8888|peer:localhost:9000|nomqtt|nopeer
+  const m = location.hash.match(/#net=([^#]+)/);
+  if (m) decodeURIComponent(m[1]).split("|").forEach(part => {
+    if (part.startsWith("mqtt:")) cfg.brokers = [part.slice(5)];
+    else if (part.startsWith("peer:")){ const [h, p] = part.slice(5).split(":"); cfg.peer = {host:h, port:+p, path:"/", secure:false}; }
+    else if (part === "nomqtt") cfg.brokers = [];
+    else if (part === "nopeer") cfg.noPeer = true;
+  });
+  return cfg;
+})();
+
+function makeNet(game){
+  const TOPIC = "jeux-st4-qc/" + game + "/";
+  const PFX = "jeux-st4-" + game + "-";
+  const st = {peer:null, clients:[], link:null, timers:[], closed:false};
+  const hasPeer = () => typeof Peer !== "undefined" && !NETCFG.noPeer;
+  const hasMqtt = () => typeof mqtt !== "undefined" && NETCFG.brokers.length > 0;
+  const peerOpts = () => Object.assign({config:{iceServers:NETCFG.ice}, debug:0}, NETCFG.peer || {});
+  const later = (fn, ms) => { const t = setTimeout(fn, ms); st.timers.push(t); return t; };
+
+  // ---- objet « lien » commun aux deux chemins ----
+  function makeLink(kind, sendFn, closeFn){
+    const L = {kind, h:{}, alive:true, lastIn:Date.now(),
+      on(e, f){ (L.h[e] = L.h[e] || []).push(f); return L; },
+      emit(e, a){ (L.h[e] || []).forEach(f => { try { f(a); } catch(err){ console.error(err); } }); },
+      send(o){ if (L.alive) { try { sendFn(o); } catch(e){} } },
+      close(){ if (!L.alive) return; L.alive = false; try { closeFn(); } catch(e){} }
+    };
+    return L;
+  }
+  function adopt(L, onLink){
+    if (st.link || st.closed){ L.close(); return false; }
+    st.link = L;
+    // fermer l'autre chemin
+    if (L.kind === "relais"){ try { st.peer && st.peer.destroy(); } catch(e){} st.peer = null; st.clients.filter(c => c !== L._client).forEach(c => { try { c.end(true); } catch(e){} }); }
+    else { st.clients.forEach(c => { try { c.end(true); } catch(e){} }); st.clients = []; }
+    onLink(L); return true;
+  }
+
+  // ---- relais MQTT ----
+  function mqttConnect(url, onReady, onFail){
+    let done = false;
+    const c = mqtt.connect(url, {clientId:"st4_" + Math.random().toString(36).slice(2, 10), clean:true, connectTimeout:6000, reconnectPeriod:0, keepalive:20});
+    c.on("connect", () => { if (!done){ done = true; onReady(c); } });
+    const fail = () => { if (!done){ done = true; try { c.end(true); } catch(e){} onFail(); } };
+    c.on("error", fail); c.on("close", fail); later(fail, 7000);
+    return c;
+  }
+  function relayLink(c, code, myBox, otherBox, onLink){
+    const L = makeLink("relais", o => c.publish(TOPIC + code + "/" + otherBox, JSON.stringify({k:"d", d:o})), () => { try { c.publish(TOPIC + code + "/" + otherBox, JSON.stringify({k:"bye"})); } catch(e){} later(() => { try { c.end(true); } catch(e){} }, 200); });
+    L._client = c;
+    const hb = setInterval(() => { if (!L.alive){ clearInterval(hb); return; } try { c.publish(TOPIC + code + "/" + otherBox, JSON.stringify({k:"hb"})); } catch(e){} if (Date.now() - L.lastIn > 9000){ clearInterval(hb); L.alive = false; L.emit("close"); } }, 2000);
+    c.on("close", () => { if (L.alive && st.link === L){ L.alive = false; clearInterval(hb); L.emit("close"); } });
+    L._msg = m => { L.lastIn = Date.now(); if (m.k === "d") L.emit("data", m.d); else if (m.k === "bye"){ if (L.alive){ L.alive = false; clearInterval(hb); L.emit("close"); } } };
+    return L;
+  }
+
+  // ---- direct PeerJS ----
+  function directLink(conn){
+    const L = makeLink("direct", o => conn.send(o), () => conn.close());
+    conn.on("data", d => { L.lastIn = Date.now(); L.emit("data", d); });
+    conn.on("close", () => { if (L.alive){ L.alive = false; L.emit("close"); } });
+    conn.on("error", () => { if (L.alive){ L.alive = false; L.emit("close"); } });
+    return L;
+  }
+
+  const API = {
+    available(){ return hasPeer() || hasMqtt(); },
+    // Héberger : onCode(code) dès que la partie est prête ; onLink(lien) quand l'adversaire arrive
+    host(onCode, onLink, onStatus){
+      st.closed = false; st.link = null;
+      const code = Array.from({length:4}, () => "ABCDEFGHJKMNPQRSTUVWXYZ"[Math.floor(Math.random()*23)]).join("");
+      let ready = 0, failed = 0, total = 0;
+      const okOne = () => { ready++; if (ready === 1){ onCode(code); onStatus("En attente de ton adversaire… Il choisit « Rejoindre » et tape ce code."); } };
+      const failOne = () => { failed++; if (failed === total && !ready) onStatus("Impossible de joindre les serveurs de jeu. Vérifie la connexion Internet (ou essaie le partage de connexion d'un cellulaire)."); };
+      onStatus("Préparation de la partie…");
+      if (hasMqtt()) NETCFG.brokers.forEach(url => { total++;
+        mqttConnect(url, c => {
+          st.clients.push(c); let L = null;
+          c.subscribe(TOPIC + code + "/h", {qos:0}, err => { if (err){ failOne(); return; } okOne(); });
+          c.on("message", (t, buf) => { let m; try { m = JSON.parse(buf.toString()); } catch(e){ return; }
+            if (m.k === "join"){
+              if (L && L.gid === m.id){ c.publish(TOPIC + code + "/g", JSON.stringify({k:"ok", to:m.id})); return; }
+              if (st.link){ if (st.link.gid !== m.id) c.publish(TOPIC + code + "/g", JSON.stringify({k:"full", to:m.id})); return; }
+              L = relayLink(c, code, "h", "g", onLink); L.gid = m.id; c.publish(TOPIC + code + "/g", JSON.stringify({k:"ok", to:m.id})); adopt(L, onLink); }
+            else if (L) L._msg(m); });
+        }, failOne); });
+      if (hasPeer()){ total++;
+        try {
+          const p = new Peer(PFX + code.toLowerCase(), peerOpts()); st.peer = p;
+          p.on("open", okOne);
+          p.on("error", err => { if (!ready) failOne(); console.warn("peer", err && err.type); });
+          p.on("connection", conn => { conn.on("open", () => adopt(directLink(conn), onLink)); });
+        } catch(e){ failOne(); }
+      }
+      if (!total) onStatus("Le mode en ligne demande une connexion Internet.");
+    },
+    // Rejoindre une partie avec son code
+    join(code, onLink, onStatus){
+      st.closed = false; st.link = null;
+      const id = Math.random().toString(36).slice(2, 10);
+      let pending = 0;
+      const giveUp = () => { pending--; if (pending <= 0 && !st.link) onStatus(`Aucune partie trouvée avec le code ${code}. Vérifie le code et que la partie est bien créée sur l'autre appareil.`); };
+      onStatus(`Connexion à la partie ${code}…`);
+      if (hasMqtt()) NETCFG.brokers.forEach(url => { pending++;
+        mqttConnect(url, c => {
+          st.clients.push(c); let L = null, tries = 0;
+          c.subscribe(TOPIC + code + "/g", {qos:0});
+          c.on("message", (t, buf) => { let m; try { m = JSON.parse(buf.toString()); } catch(e){ return; }
+            if (m.k === "ok" && m.to === id && !L){ L = relayLink(c, code, "g", "h", onLink); adopt(L, onLink); }
+            else if (m.k === "full" && m.to === id && !st.link) onStatus("Cette partie est déjà complète.");
+            else if (L) L._msg(m); });
+          const knock = () => { if (st.link || st.closed) return; if (tries++ > 10){ try { c.end(true); } catch(e){} giveUp(); return; } c.publish(TOPIC + code + "/h", JSON.stringify({k:"join", id})); later(knock, 1200); };
+          knock();
+        }, giveUp); });
+      if (hasPeer()){ pending++;
+        try {
+          const p = new Peer(undefined, peerOpts()); st.peer = p;
+          p.on("open", () => { const conn = p.connect(PFX + code.toLowerCase(), {reliable:true, serialization:"json"}); conn.on("open", () => adopt(directLink(conn), onLink)); });
+          p.on("error", err => { if (err && err.type === "peer-unavailable") giveUp(); });
+          later(() => { if (!st.link && st.peer === p) { /* le direct n'a pas abouti : le relais continue */ } }, 10000);
+        } catch(e){ giveUp(); }
+      }
+      if (!pending) onStatus("Le mode en ligne demande une connexion Internet.");
+      later(() => { if (!st.link) onStatus("La connexion prend du temps… Si rien ne se passe, vérifie le code, ou essaie le partage de connexion d'un cellulaire."); }, 14000);
+    },
+    close(){
+      st.closed = true; st.timers.forEach(clearTimeout); st.timers = [];
+      try { st.link && st.link.close(); } catch(e){}
+      try { st.peer && st.peer.destroy(); } catch(e){}
+      st.clients.forEach(c => { try { c.end(true); } catch(e){} });
+      st.clients = []; st.peer = null; st.link = null;
+    }
+  };
+  return API;
+}
 // ================= SUPER DÉTECTIVE DES PPM : DONNÉES =================
 const WORLDS = [
   {id:"lab",    no:"Monde 1", name:"Labo du compte-gouttes", col:"#5ee6c8"},
@@ -1225,7 +1377,7 @@ function raceUI(which, extra){
       <div class="rmodes" id="rOnChoice"><button class="btn gold" id="rHost" type="button">Créer une course</button><button class="btn" id="rJoinShow" type="button">Rejoindre une course</button></div>
       <div id="rHostBox" hidden><p>Code à donner :</p><div class="rcode" id="rCode">····</div></div>
       <div id="rJoinBox" hidden><input class="rcodein" id="rCodeIn" maxlength="4" autocomplete="off" placeholder="CODE" aria-label="Code de la course"> <button class="btn gold" id="rJoin" type="button">Rejoindre</button></div>
-      <p class="rstatus" id="rStatus" aria-live="polite">${typeof Peer === "undefined" && location.hash !== "#bctest" ? "Le mode en ligne demande une connexion Internet." : ""}</p>
+      <p class="rstatus" id="rStatus" aria-live="polite">${RNET.available() ? "" : "Le mode en ligne demande une connexion Internet."}</p>
       <button class="btn" id="rBack2" type="button">Annuler</button>`;
     $("rBack2").onclick = () => { raceNetClose(); raceUI("modes"); };
     $("rHost").onclick = raceHost;
@@ -1389,7 +1541,7 @@ const RaceScene = {
     if (RACE.over) return;
     if (RACE.count > 0){ const before = Math.ceil(RACE.count); RACE.count -= dt; const now = Math.ceil(RACE.count); if (now !== before) AudioSys.sfx(now <= 0 ? "good" : "click"); RACE.p.forEach(P => P.inp.jp = false); return; }
     RACE.p.forEach(P => rStep(P, dt));
-    if (RACE.mode === "online"){ RACE.sendT -= dt; if (RACE.sendT <= 0){ RACE.sendT = 0.07; const P = RACE.p[0]; rSend({t:"st", x:P.x, y:P.y, f:P.face, fin:P.fin, tm:P.time}); } }
+    if (RACE.mode === "online"){ RACE.sendT -= dt; if (RACE.sendT <= 0){ RACE.sendT = RACE.link && RACE.link.kind === "relais" ? 0.1 : 0.07; const P = RACE.p[0]; rSend({t:"st", x:P.x, y:P.y, f:P.face, fin:P.fin, tm:P.time}); } }
     const meDone = RACE.p.every(P => P.fin), oppDone = RACE.mode !== "online" || (RACE.ghost && RACE.ghost.fin);
     if (meDone && !oppDone){ RACE.endT += dt; }
     if ((meDone && oppDone) || (meDone && RACE.endT > 45)) raceResults();
@@ -1437,55 +1589,32 @@ function raceResults(){
   $("rMap").onclick = () => quitToMenu();
 }
 
-// ---------- réseau ----------
-const RPeer = location.hash === "#bctest" ? RaceFakePeer() : (typeof Peer !== "undefined" ? Peer : null);
-const RPREFIX = "course-ppm-st4-";
-function rSend(m){ try { if (RACE.conn && RACE.conn.open !== false) RACE.conn.send(m); } catch(e){} }
-function raceNetClose(){ try { RACE.conn && RACE.conn.close(); } catch(e){} try { RACE.peer && RACE.peer.destroy(); } catch(e){} RACE.conn = null; RACE.peer = null; RACE.role = null; clearTimeout(RACE.to); }
+// ---------- réseau (direct + relais, voir net.js) ----------
+const RNET = makeNet("course");
+function rSend(m){ if (RACE.link) RACE.link.send(m); }
+function raceNetClose(){ try { RNET.close(); } catch(e){} RACE.link = null; RACE.role = null; }
+function rUse(L, role){ RACE.link = L; RACE.role = role; L.on("data", raceData); L.on("close", raceLost); }
 function raceHost(){
-  if (!RPeer) return;
+  if (!RNET.available()) return;
+  raceNetClose();
   $("rOnChoice").hidden = true; $("rHostBox").hidden = false;
-  const tryHost = () => {
-    const code = Array.from({length:4}, () => "ABCDEFGHJKMNPQRSTUVWXYZ"[Math.floor(Math.random()*23)]).join("");
-    rStatus("Création de la course…");
-    const peer = new RPeer(RPREFIX + code.toLowerCase()); RACE.peer = peer; RACE.role = "host";
-    peer.on("open", () => { $("rCode").textContent = code; rStatus("En attente de ton adversaire… Il choisit « Rejoindre une course » et tape ce code."); });
-    peer.on("error", err => { if (err && err.type === "unavailable-id"){ try { peer.destroy(); } catch(e){} tryHost(); } else rStatus("Erreur réseau (" + (err && err.type || "inconnue") + "). Vérifie la connexion Internet."); });
-    peer.on("connection", conn => { if (RACE.conn) return; RACE.conn = conn; conn.on("data", raceData); conn.on("close", raceLost); conn.on("open", () => { rStatus("Adversaire connecté !"); setTimeout(raceHostGo, 400); }); });
-  };
-  tryHost();
+  RNET.host(code => { $("rCode").textContent = code; }, L => { rStatus("Adversaire connecté (" + (L.kind === "direct" ? "connexion directe" : "relais Internet") + ") !"); rUse(L, "host"); setTimeout(raceHostGo, 500); }, rStatus);
 }
 function raceHostGo(){ const seed = (Math.random()*1e9)|0; rSend({t:"go", seed}); startRace("online", seed); }
 function raceJoin(){
-  if (!RPeer) return;
+  if (!RNET.available()) return;
   const code = $("rCodeIn").value.trim().toUpperCase(); if (code.length !== 4){ rStatus("Le code contient 4 lettres."); return; }
-  rStatus("Connexion à la course " + code + "…");
-  const peer = new RPeer(); RACE.peer = peer; RACE.role = "guest";
-  peer.on("error", err => rStatus(err && err.type === "peer-unavailable" ? "Aucune course avec ce code. Vérifie le code." : "Erreur réseau (" + (err && err.type || "inconnue") + ")."));
-  peer.on("open", () => { const conn = peer.connect(RPREFIX + code.toLowerCase(), {reliable:true, serialization:"json"}); RACE.conn = conn; conn.on("data", raceData); conn.on("close", raceLost); conn.on("open", () => rStatus("Connecté ! La course va commencer…")); });
-  clearTimeout(RACE.to); RACE.to = setTimeout(() => { if (scene !== RaceScene) rStatus("La connexion prend du temps. Le réseau de l'école bloque peut-être les connexions entre appareils : essaie le partage de connexion d'un cellulaire."); }, 12000);
+  raceNetClose();
+  RNET.join(code, L => { rStatus("Connecté (" + (L.kind === "direct" ? "connexion directe" : "relais Internet") + ") ! La course va commencer…"); rUse(L, "guest"); }, rStatus);
 }
 function raceData(d){
   if (!d || !d.t) return;
-  if (d.t === "go"){ clearTimeout(RACE.to); startRace("online", d.seed); }
+  if (d.t === "go") startRace("online", d.seed);
   else if (d.t === "st" && RACE.ghost){ Object.assign(RACE.ghost, {x:d.x, y:d.y, face:d.f, fin:d.fin || RACE.ghost.fin, time:d.tm}); }
   else if (d.t === "fin" && RACE.ghost){ Object.assign(RACE.ghost, {fin:true, time:d.tm, right:d.r, wrong:d.w}); }
   else if (d.t === "again" && RACE.role === "host" && RACE.over) raceHostGo();
 }
-function raceLost(){ if (!RACE.active) return; const wasRacing = scene === RaceScene && !RACE.over; raceNetClose(); if (wasRacing && RACE.ghost){ RACE.ghost.fin = true; RACE.ghost.time = null; } if (!wasRacing){ raceUI("online"); rStatus("La connexion avec l'adversaire a été perdue."); } }
-function RaceFakePeer(){
-  const bc = new BroadcastChannel("course-fakepeer");
-  class Ev { constructor(){ this.h = {}; } on(e, f){ (this.h[e] = this.h[e] || []).push(f); } emit(e, a){ (this.h[e] || []).forEach(f => f(a)); } }
-  class FConn extends Ev { constructor(peer, rid){ super(); this.peer = peer; this.rid = rid; this.open = false; } send(d){ bc.postMessage({to:this.rid, from:this.peer.id, type:"data", data:d}); } close(){ bc.postMessage({to:this.rid, from:this.peer.id, type:"close"}); } }
-  return class FPeer extends Ev {
-    constructor(id){ super(); this.id = id || "g" + Math.random().toString(36).slice(2,8); this.c = {}; bc.addEventListener("message", ev => this.msg(ev.data)); setTimeout(() => this.emit("open", this.id), 30); }
-    connect(rid){ const c = new FConn(this, rid); this.c[rid] = c; bc.postMessage({to:rid, from:this.id, type:"connect"}); return c; }
-    msg(m){ if (m.to !== this.id) return; const c = this.c[m.from];
-      if (m.type === "connect"){ const n = new FConn(this, m.from); this.c[m.from] = n; this.emit("connection", n); setTimeout(() => { n.open = true; n.emit("open"); bc.postMessage({to:m.from, from:this.id, type:"accept"}); }, 20); }
-      else if (m.type === "accept" && c){ c.open = true; c.emit("open"); } else if (m.type === "data" && c) c.emit("data", m.data); else if (m.type === "close" && c) c.emit("close"); }
-    destroy(){}
-  };
-}
+function raceLost(){ if (!RACE.active) return; const racing = scene === RaceScene && !RACE.over; RACE.link = null; if (racing && RACE.ghost){ RACE.ghost.fin = true; RACE.ghost.time = null; } else if (!racing && !RACE.over){ raceUI("online"); rStatus("La connexion avec l'adversaire a été perdue."); } }
 
 // nettoyage quand on revient à la carte
 const _quitToMenu = quitToMenu;
